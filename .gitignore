@@ -348,3 +348,5 @@ ASALocalRun/
 
 # BeatPulse healthcheck temp database
 healthchecksdb
+/Potts20Simulation/.ipynb_checkpoints/1DIsingTMES-checkpoint.ipynb
+/Potts20Simulation/1DIsingTMES.ipynb
