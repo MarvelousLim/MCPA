@@ -284,6 +284,7 @@ void resample(int* E, int* O, int* update, int* replicaFamily, int R, int U, FIL
 	double X = nCull;
 	X /= R;
 	fprintf(Xfile, "%d %f\n", U - 1, X);
+	fflush(Xfile);
 	printf("Culling fraction:\t%f\n", X);
 	for (int i = 0; i < R; i++)
 		update[i] = i;
@@ -339,19 +340,20 @@ int main(int argc, char* argv[]) {
 
 	int q = atoi(argv[6]);	// q parameter for potts model, each spin variable can take on values 0 - q-1
 
+	printf("running 2DPotts_q%d_N%d_R%d_nSteps%d_run%de.txt\n", q, N, R, nSteps, run_number);
 	// initializing files to write in
 	char s[100];
-	sprintf(s, "datasets//2DIsing_q%d_N%d_R%d_nSteps%d_run%de.txt", q, N, R, nSteps, run_number);
+	sprintf(s, "datasets//2DPotts_q%d_N%d_R%d_nSteps%d_run%de.txt", q, N, R, nSteps, run_number);
 	FILE* efile = fopen(s, "w");	// average energy
-	sprintf(s, "datasets//2DIsing_q%d_N%d_R%d_nSteps%d_run%de2.txt", q, N, R, nSteps, run_number);
+	sprintf(s, "datasets//2DPotts_q%d_N%d_R%d_nSteps%d_run%de2.txt", q, N, R, nSteps, run_number);
 	FILE* e2file = fopen(s, "w");	// surface (culled) energy
-	sprintf(s, "datasets//2DIsing_q%d_N%d_R%d_nSteps%d_run%dX.txt", q, N, R, nSteps, run_number);
+	sprintf(s, "datasets//2DPotts_q%d_N%d_R%d_nSteps%d_run%dX.txt", q, N, R, nSteps, run_number);
 	FILE* Xfile = fopen(s, "w");	// culling fraction
-	sprintf(s, "datasets//2DIsing_q%d_N%d_R%d_nSteps%d_run%dpt.txt", q, N, R, nSteps, run_number);
+	sprintf(s, "datasets//2DPotts_q%d_N%d_R%d_nSteps%d_run%dpt.txt", q, N, R, nSteps, run_number);
 	FILE* ptfile = fopen(s, "w");	// rho t
-	sprintf(s, "datasets//2DIsing_q%d_N%d_R%d_nSteps%d_run%dn.txt", q, N, R, nSteps, run_number);
+	sprintf(s, "datasets//2DPotts_q%d_N%d_R%d_nSteps%d_run%dn.txt", q, N, R, nSteps, run_number);
 	FILE* nfile = fopen(s, "w");	// number of sweeps
-	sprintf(s, "datasets//2DIsing_q%d_N%d_R%d_nSteps%d_run%dch.txt", q, N, R, nSteps, run_number);
+	sprintf(s, "datasets//2DPotts_q%d_N%d_R%d_nSteps%d_run%dch.txt", q, N, R, nSteps, run_number);
 	FILE* chfile = fopen(s, "w");	// cluster size histogram
 
 
@@ -359,6 +361,7 @@ int main(int argc, char* argv[]) {
 
 	// Allocate space on host 
 	int* hostE = (int*)malloc(R * sizeof(int));
+	char* hostSpin = (char*)malloc(fullLatticeByteSize);
 	int* hostUpdate = (int*)malloc(R * sizeof(int));
 	int* replicaFamily = (int*)malloc(R * sizeof(int));
 	int* energyOrder = (int*)malloc(R * sizeof(int));
@@ -416,6 +419,29 @@ int main(int argc, char* argv[]) {
 		// perform resampling step on cpu
 		resample(hostE, energyOrder, hostUpdate, replicaFamily, R, U, e2file, Xfile);
 		U--;
+
+		// print hostSpin into a file
+		if ((-0.5 * L * L >= U) && (U >= -2 * L * L) &&  ((U + L * L / 2) % ((L * L) / 100) == 0)) {
+			//diff with E=-0.5 is set to 0.01
+			cudaMemcpy(hostSpin, deviceSpin, fullLatticeByteSize, cudaMemcpyDeviceToHost);
+			sprintf(s, "datasets//spin_samples//2DPotts_q%d_N%d_R%d_nSteps%d_run%d_U%fs.txt", q, N, R, nSteps, run_number, 1.0 * U / (L * L));
+			FILE* sfile = fopen(s, "w");	// average energy
+			int r_counter = 0;
+			for (int i = 0; i <= R; i++) {
+				if (hostE[i] == U) {
+					r_counter++;
+					int replica_shift = i * N;
+					for (int k = 0; k < N; k++) {
+						fprintf(sfile, "%d ", (int)hostSpin[replica_shift + k]);
+					}
+				}
+				if (r_counter >= 8192)
+					break;
+			}
+
+
+			fclose(sfile);
+		}
 		// copy list of replicas to update back to gpu
 		cudaMemcpy(deviceUpdate, hostUpdate, R * sizeof(int), cudaMemcpyHostToDevice);
 		updateReplicas <<< BLOCKS, THREADS >>> (deviceSpin, deviceE, deviceUpdate, N);
@@ -431,6 +457,7 @@ int main(int argc, char* argv[]) {
 	cudaFree(deviceVisited);
 
 	free(hostE);
+	free(hostSpin);
 	free(hostUpdate);
 	free(replicaFamily);
 	free(energyOrder);

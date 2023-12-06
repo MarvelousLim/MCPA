@@ -4,13 +4,27 @@
 ## Get latest from https://github.com/github/gitignore/blob/master/VisualStudio.gitignore
 
 # Mine
-Potts20Simulation/datasets/*
-Potts20Simulation/x64
+Potts20Simulation/AR_datasets/
+Potts20Simulation/cluster_image/
+Potts20Simulation/cluster_tmp/
+Potts20Simulation/cluster_txt/
+Potts20Simulation/datasets/
+Potts20Simulation/images/
+Potts20Simulation/marina_datasets/
+Potts20Simulation/old_images/
+Potts20Simulation/old_txt/
+Potts20Simulation/txt/
+Potts20Simulation/x64/
 Potts20Simulation/*.exe
 Potts20Simulation/*.exp
 Potts20Simulation/*.lib
 Potts20Simulation/*vcx*
+Potts20Simulation/*.ipynb
+Potts20Simulation/*.ipynb_checkpoints
+Potts20Simulation/*.nb
+Potts20Simulation/*.py
 x64
+
 
 
 # User-specific files
@@ -351,3 +365,5 @@ healthchecksdb
 /Potts20Simulation/marina_datasets/L12_honey.csv
 /Potts20Simulation/1DIsingTMES.ipynb
 /Potts20Simulation/.ipynb_checkpoints/1DIsingTMES-checkpoint.ipynb
+/vcpkg
+/Potts20Simulation/2DIsing_DOS_L40.txt
