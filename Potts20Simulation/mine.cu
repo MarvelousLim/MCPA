@@ -4,6 +4,8 @@
 #include <cuda.h>
 #include <curand_kernel.h>
 
+#include <time.h>
+
 //#define NNEIBORS 4  // number of nearest neighbors, is 4 for 2d lattice
 
 /*-----------------------------------------------------------------------------------------------------------
@@ -356,6 +358,12 @@ __global__ void setup_kernel(curandStatePhilox4_32_10_t* state, int seed)
 }
 
 int main(int argc, char* argv[]) {
+	printf("Start\n");
+
+	clock_t start, end;
+	double cpu_time_used;
+
+	start = clock();
 
 	// Parameters:
 
@@ -380,22 +388,25 @@ int main(int argc, char* argv[]) {
 
 	printf("running 2DPotts%s_q%d_N%d_R%d_nSteps%d_run%de.txt\n", heating, q, N, R, nSteps, run_number);
 
+
 	char s[100];
-	sprintf(s, "datasets//2DPotts//2DPotts%s_q%d_N%d_R%d_nSteps%d_run%de.txt", heating, q, N, R, nSteps, run_number);
+	const char* prefix = "2DPotts";
+	sprintf(s, "datasets//%s//2DPotts%s_q%d_N%d_R%d_nSteps%d_run%de.txt", prefix, heating, q, N, R, nSteps, run_number);
 	FILE* efile = fopen(s, "w");	// average energy
-	sprintf(s, "datasets//2DPotts//2DPotts%s_q%d_N%d_R%d_nSteps%d_run%de2.txt", heating, q, N, R, nSteps, run_number);
+	sprintf(s, "datasets//%s//2DPotts%s_q%d_N%d_R%d_nSteps%d_run%de2.txt", prefix, heating, q, N, R, nSteps, run_number);
 	FILE* e2file = fopen(s, "w");	// surface (culled) energy
-	sprintf(s, "datasets//2DPotts//2DPotts%s_q%d_N%d_R%d_nSteps%d_run%dX.txt", heating, q, N, R, nSteps, run_number);
+	sprintf(s, "datasets//%s//2DPotts%s_q%d_N%d_R%d_nSteps%d_run%dX.txt", prefix, heating, q, N, R, nSteps, run_number);
 	FILE* Xfile = fopen(s, "w");	// culling fraction
-	sprintf(s, "datasets//2DPotts//2DPotts%s_q%d_N%d_R%d_nSteps%d_run%dpt.txt", heating, q, N, R, nSteps, run_number);
+	sprintf(s, "datasets//%s//2DPotts%s_q%d_N%d_R%d_nSteps%d_run%dpt.txt", prefix, heating, q, N, R, nSteps, run_number);
 	FILE* ptfile = fopen(s, "w");	// rho t
-	sprintf(s, "datasets//2DPotts//2DPotts%s_q%d_N%d_R%d_nSteps%d_run%dn.txt", heating, q, N, R, nSteps, run_number);
+	sprintf(s, "datasets//%s//2DPotts%s_q%d_N%d_R%d_nSteps%d_run%dn.txt", prefix, heating, q, N, R, nSteps, run_number);
 	FILE* nfile = fopen(s, "w");	// number of sweeps
-	sprintf(s, "datasets//2DPotts//2DPotts%s_q%d_N%d_R%d_nSteps%d_run%dch.txt", heating, q, N, R, nSteps, run_number);
+	sprintf(s, "datasets//%s//2DPotts%s_q%d_N%d_R%d_nSteps%d_run%dch.txt", prefix, heating, q, N, R, nSteps, run_number);
 	FILE* chfile = fopen(s, "w");	// cluster size histogram
 	//sprintf(s, "datasets//test.txt");
 	//FILE* test = fopen(s, "w");	// test data
 
+	printf("Starting memory allocation\n");
 	size_t fullLatticeByteSize = R * N * sizeof(char);
 
 	// Allocate space on host 
@@ -458,7 +469,7 @@ int main(int argc, char* argv[]) {
 		// Perform monte carlo sweeps on gpu
 		cudaMemset(device_number_of_flips, 0, sizeof(int));
 
-		equilibrate <<< BLOCKS, THREADS >> > (devStates, deviceSpin, deviceE, L, N, R, q, nSteps, U, device_number_of_flips, heat);
+		equilibrate << < BLOCKS, THREADS >> > (devStates, deviceSpin, deviceE, L, N, R, q, nSteps, U, device_number_of_flips, heat);
 		cudaCheckError(cudaPeekAtLastError());
 
 		cudaCheckError(cudaMemcpy(&host_number_of_flips, device_number_of_flips, sizeof(int), cudaMemcpyDeviceToHost));
@@ -522,6 +533,16 @@ int main(int argc, char* argv[]) {
 	fclose(chfile);
 
 	//fclose(test);
+
+	end = clock();
+	cpu_time_used = ((double)(end - start)) / CLOCKS_PER_SEC;
+
+	sprintf(s, "datasets//%s//2DPotts%s_q%d_N%d_R%d_nSteps%d_run%dtime.txt", prefix, heating, q, N, R, nSteps, run_number);
+	FILE* timefile = fopen(s, "w");
+
+	fprintf(timefile, "%f seconds", cpu_time_used);
+
+	fclose(timefile);
 
 	// End
 	return 0;
