@@ -1,8 +1,9 @@
-@software{MozolenkoMCPA,
-  author = {Mozolenko, V.K.},
-  title = {MCPA},
-  year = {2020},
-  publisher = {GitHub},
-  journal = {GitHub repository},
-  url  = {https://github.com/MarvelousLim/MCPA/blob/master}
-}
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+- family-names: "Mozolenko"
+  given-names: "V.K."
+  orcid: "https://orcid.org/0000-0002-4678-0044"
+title: "MCPA"
+date-released: 2020
+url: "https://github.com/MarvelousLim/MCPA/blob/master"
