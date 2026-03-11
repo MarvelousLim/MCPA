@@ -1,240 +1,173 @@
-﻿//#pragma once
-//
-//
-//#define NNEIBORS 4 // number of nearest neighbors, is 4 for 2d lattice
-//#define STATISTICS_NUMBER 5		// primary statistics to calc for each replica
-//#define STATISTICS_NUMBER_2 10	// secondary statistics calced from primary
-//#define EPSILON 0
-//
-//
-//int main(int argc, char* argv[]) {
-//
-//	clock_t start, end;
-//	double cpu_time_used;
-//
-//	start = clock();
-//
-//	// Parameters:
-//
-//	int run_number = atoi(argv[1]);	// A number to label this run of the algorithm, used for data keeping purposes, also, a seed
-//	int seed = run_number;
-//	//int grid_width = atoi(argv[2]);	// should not be more than 256 due to MTGP32 limits
-//	int L = atoi(argv[2]);	// Lattice size
-//	int N = L * L;
-//	//int R = grid_width * BLOCKS;	// Population size
-//	int BLOCKS = atoi(argv[3]);
-//	int THREADS = atoi(argv[4]);
-//	int nSteps = atoi(argv[5]);
-//
-//	int R = BLOCKS * THREADS;
-//
-//
-//	//Blume-Capel model parameter
-//	int D_div = atoi(argv[6]);
-//	int D_base = atoi(argv[7]);
-//	float D = (float)D_div / D_base;
-//	bool heat = atoi(argv[8]); // 0 if cooling (default) and 1 if heating
-//
-//
-//	// initializing files to write in
-//	const char* heating = heat ? "Heating" : "";
-//
-//	printf("running 2DBlume%s_q%d_D%f_N%d_R%d_nSteps%d_run%de.txt\n", heating, q, D, N, R, nSteps, run_number);
-//
-//	char s[100];
-//	const char* prefix = "test";// "2DBlume";
-//	/*
-//	sprintf(s, "datasets//%s//2DBlume%s_q%d_D%f_N%d_R%d_nSteps%d_run%de.txt", prefix, heating, q, D, N, R, nSteps, run_number);
-//	FILE* efile = fopen(s, "w");	// average energy
-//	sprintf(s, "datasets//%s//2DBlume%s_q%d_D%f_N%d_R%d_nSteps%d_run%de2.txt", prefix, heating, q, D, N, R, nSteps, run_number);
-//	FILE* e2file = fopen(s, "w");	// surface (culled) energy
-//	*/
-//	sprintf(s, "datasets//%s//2DBlume%s_q%d_D%f_N%d_R%d_nSteps%d_run%dX.txt", prefix, heating, q, D, N, R, nSteps, run_number);
-//	FILE* Xfile = fopen(s, "w");	// culling fraction
-//	/*
-//	sprintf(s, "datasets//%s//2DBlume%s_q%d_D%f_N%d_R%d_nSteps%d_run%dpt.txt", prefix, heating, q, D, N, R, nSteps, run_number);
-//	FILE* ptfile = fopen(s, "w");	// rho t
-//	sprintf(s, "datasets//%s//2DBlume%s_q%d_D%f_N%d_R%d_nSteps%d_run%dn.txt", prefix, heating, q, D, N, R, nSteps, run_number);
-//	FILE* nfile = fopen(s, "w");	// number of sweeps
-//	sprintf(s, "datasets//%s//2DBlume%s_q%d_D%f_N%d_R%d_nSteps%d_run%dch.txt", prefix, heating, q, D, N, R, nSteps, run_number);
-//	FILE* chfile = fopen(s, "w");	// cluster size histogram
-//	*/
-//	sprintf(s, "datasets//%s//2DBlume%s_q%d_D%f_N%d_R%d_nSteps%d_run%dm.txt", prefix, heating, q, D, N, R, nSteps, run_number);
-//	FILE* mfile = fopen(s, "w");	// magnetization in format m = sum(sigma), m^2=sum(sigma^2), N
-//	/*
-//	sprintf(s, "datasets//%s//2DBlume%s_q%d_D%f_N%d_R%d_nSteps%d_run%de3.txt", heating, q, D, N, R, nSteps, run_number);
-//	FILE* e3file = fopen(s, "w");
-//	*/
-//	/*
-//	sprintf(s, "datasets//hysteresis//2DBlume%s_q%d_D%f_N%d_R%d_nSteps%d_run%ds.txt", heating, q, D, N, R, nSteps, run_number);
-//	FILE* sfile = fopen(s, "w");	// spin system sample
-//	*/
-//
-//	size_t fullLatticeByteSize = R * N * sizeof(char);
-//
-//	// Allocate space on host
-//	//char* hostSpin = (char*)malloc(fullLatticeByteSize);
-//	int* hostE = (int*)malloc(R * sizeof(int));
-//	int* hostUpdate = (int*)malloc(R * sizeof(int));
-//	int* replicaFamily = (int*)malloc(R * sizeof(int));
-//	int* energyOrder = (int*)malloc(R * sizeof(int));
-//	for (int i = 0; i < R; i++) {
-//		energyOrder[i] = i;
-//		replicaFamily[i] = i;
-//	}
-//	int MagnetizationArraySize = R * STATISTICS_NUMBER;
-//	int* hostMagnetization = (int*)malloc(MagnetizationArraySize * sizeof(int));
-//
-//	// Allocate memory on device
-//	char* deviceSpin; // s, d_s
-//	int* deviceE;
-//	int* deviceUpdate;
-//	int* deviceMagnetization;
-//	gpuErrchk(cudaMalloc((void**)&deviceSpin, fullLatticeByteSize));
-//	gpuErrchk(cudaMalloc((void**)&deviceE, R * sizeof(int)));
-//	gpuErrchk(cudaMalloc((void**)&deviceUpdate, R * sizeof(int)));
-//	gpuErrchk(cudaMalloc((void**)&deviceMagnetization, MagnetizationArraySize * sizeof(int)));
-//
-//	// Allocate memory for histogram calculation
-//	/*
-//	int* hostClusterSizeArray = (int*)malloc(N * sizeof(int));
-//	bool* deviceVisited;
-//	int* deviceClusterSizeArray;
-//	int* deviceStack;
-//	gpuErrchk( cudaMalloc((void**)&deviceVisited, N * R * sizeof(bool)) );
-//	gpuErrchk( cudaMalloc((void**)&deviceClusterSizeArray, N * sizeof(int)) );
-//	gpuErrchk( cudaMalloc((void**)&deviceStack, N * R * sizeof(int)) );
-//	*/
-//
-//	// Init Philox
-//	curandStatePhilox4_32_10_t* devStates;
-//	gpuErrchk(cudaMalloc((void**)&devStates, R * sizeof(curandStatePhilox4_32_10_t)));
-//	setup_kernel << < BLOCKS, THREADS >> > (devStates, seed);
-//	gpuErrchk(cudaPeekAtLastError());
-//	gpuErrchk(cudaDeviceSynchronize());
-//
-//	// Init std random generator for little host part
-//	srand(seed);
-//
-//	// Actually working part
-//	initializePopulation << < BLOCKS, THREADS >> > (devStates, deviceSpin, N, q);
-//	gpuErrchk(cudaPeekAtLastError());
-//	gpuErrchk(cudaDeviceSynchronize());
-//	cudaMemset(deviceE, 0, R * sizeof(int));
-//
-//	//init testing values
-//	/*
-//	deviceEnergy <<< BLOCKS, THREADS >>> (deviceSpin, deviceE, L, N, D);
-//	gpuErrchk(cudaPeekAtLastError());
-//	gpuErrchk(cudaDeviceSynchronize());
-//	gpuErrchk( cudaMemcpy(hostE, deviceE, R * sizeof(int), cudaMemcpyDeviceToHost) );
-//
-//	char* hostSpin = (char*)malloc(N * sizeof(char)); // test shit
-//	gpuErrchk(cudaMemcpy(hostSpin, deviceSpin, N * sizeof(char), cudaMemcpyDeviceToHost)); // take one replica (first)
-//	for (int i = 0; i < L; i++) {
-//		for (int j = 0; j < L; j++) {
-//			printf("%i ", hostSpin[i * L + j]);
-//		}
-//		printf("\n");
-//	}
-//
-//
-//	int host_acceptance_number = 0;
-//	int* device_acceptance_number;
-//	gpuErrchk(cudaMalloc((void**)&device_acceptance_number, sizeof(int)));
-//	*/
-//
-//
-//	int upper_energy = N * abs(D_div) + 2 * N * D_base;
-//	int lower_energy = -N * abs(D_div) - 2 * N * D_base;
-//
-//	int U = (heat ? lower_energy : upper_energy);	// U is energy ceiling
-//
-//	//CalcPrintAvgE(efile, hostE, R, U);
-//
-//	while ((U >= lower_energy && !heat) || (U <= upper_energy && heat)) {
-//
-//		//fprintf(nfile, "%d %d\n", U, nSteps);
-//		printf("U:\t%f out of %d; nSteps: %d;\n", 1.0 * U / D_base, -2 * N, nSteps);
-//
-//		equilibrate << < BLOCKS, THREADS >> > (devStates, deviceSpin, deviceE, L, N, R, q, nSteps, U, D_div, D_base, heat);// , device_acceptance_number);
-//		gpuErrchk(cudaPeekAtLastError());
-//		gpuErrchk(cudaDeviceSynchronize());
-//		gpuErrchk(cudaMemcpy(hostE, deviceE, R * sizeof(int), cudaMemcpyDeviceToHost));
-//
-//		// record average energy and rho t
-//		//CalcPrintAvgE(efile, hostE, R, U, D_base);
-//		//CalculateRhoT(replicaFamily, ptfile, R, U, D_base);
-//		// perform resampling step on cpu
-//		// also lowers energy seiling U
-//
-//		int error = resample(hostE, energyOrder, hostUpdate, replicaFamily, R, &U, D_base, Xfile, heat);
-//
-//
-//		cudaMemset(deviceMagnetization, 0, MagnetizationArraySize * sizeof(int));
-//		calcMagnetization << < BLOCKS, THREADS >> > (deviceSpin, deviceE, L, N, R, U, deviceMagnetization);
-//		gpuErrchk(cudaPeekAtLastError());
-//		gpuErrchk(cudaDeviceSynchronize());
-//		gpuErrchk(cudaMemcpy(hostMagnetization, deviceMagnetization, MagnetizationArraySize * sizeof(int), cudaMemcpyDeviceToHost));
-//		PrintMagnetization(U, D_base, mfile, R, N, hostMagnetization);
-//
-//
-//		if (error)
-//		{
-//			printf("Process ended with zero replicas\n");
-//			break;
-//		}
-//		// copy list of replicas to update back to gpu
-//		gpuErrchk(cudaMemcpy(deviceUpdate, hostUpdate, R * sizeof(int), cudaMemcpyHostToDevice));
-//		updateReplicas << < BLOCKS, THREADS >> > (deviceSpin, deviceE, deviceUpdate, N);
-//		gpuErrchk(cudaPeekAtLastError());
-//		gpuErrchk(cudaDeviceSynchronize());
-//		printf("\n");
-//
-//
-//	}
-//
-//
-//
-//	// Free memory and close files
-//
-//	cudaFree(deviceSpin);
-//	cudaFree(deviceE);
-//	cudaFree(deviceUpdate);
-//	cudaFree(deviceMagnetization);
-//	//cudaFree(deviceClusterSizeArray);
-//	//cudaFree(deviceStack);
-//	//cudaFree(deviceVisited);
-//	//cudaFree(device_acceptance_number);
-//
-//	free(hostMagnetization);
-//	//free(hostSpin);
-//	free(hostE);
-//	free(hostUpdate);
-//	free(replicaFamily);
-//	free(energyOrder);
-//	//free(hostClusterSizeArray);
-//
-//	//fclose(efile);
-//	//fclose(e2file);
-//	fclose(Xfile);
-//	//fclose(ptfile);
-//	//fclose(nfile);
-//	//fclose(chfile);
-//	fclose(mfile);
-//
-//	//fclose(e3file);
-//
-//	end = clock();
-//	cpu_time_used = ((double)(end - start)) / CLOCKS_PER_SEC;
-//
-//	sprintf(s, "datasets//%s//2DBlume%s_q%d_D%f_N%d_R%d_nSteps%d_run%dtime.txt", prefix, heating, q, D, N, R, nSteps, run_number);
-//	FILE* timefile = fopen(s, "w");
-//
-//	fprintf(timefile, "%f seconds", cpu_time_used);
-//
-//	fclose(timefile);
-//
-//	// End
-//	return 0;
-//}
+﻿#pragma once
+
+#include "baxterwu_lib.h"
+#include <cuda_runtime.h>
+#include <iostream>
+#include <time.h>
+
+#define CUDA_CHECK(ans) { gpu_assert((ans), __FILE__, __LINE__); }
+
+
+int main(int argc, char* argv[]) {
+    clock_t global_start = clock();
+    clock_t equilibrate_ticks = 0;
+    
+
+    statisticsMode statistics_mode = detailed;
+    equlibrateMode equlibrate_mode = normal;
+    initializePopulationMode initialize_population_mode = random;
+
+    Params params;
+    params.seed = atoi(argv[1]); 
+    params.L = atoi(argv[2]);
+    params.N = params.L * params.L;
+    params.blocks = atoi(argv[3]);
+    params.threads = atoi(argv[4]);
+    params.R = params.blocks * params.threads;
+    params.nSteps = atoi(argv[5]);
+    params.fullLatticeByteSize = params.R * params.N * sizeof(int);
+    params.singleIntRowByteSize = params.R * sizeof(int);
+    params.replicaStatisticsByteSize = params.R * sizeof(replicaStatistics);
+    params.heat = (bool)atoi(argv[6]);
+
+    //long long int* host_kernel_timers, * device_kernel_timers;
+
+    //host_kernel_timers = (long long int*)malloc(params.R * sizeof(long long int));
+    //CUDA_CHECK(cudaMallocManaged((void**)&device_kernel_timers, params.R * sizeof(long long int)));
+    //cudaMemset(device_kernel_timers, 0, params.R * sizeof(long long int));
+
+    srand(params.seed);
+
+    char s[150];
+    const char* prefix = "2DBaxterWu";
+    const char* heating = params.heat ? "Heating" : "";
+
+    struct Files files;
+    sprintf(s, "C:/Users/MarvelousNote3/Yandex.Disk/ASAV/Analytics/datasets/%s/2DBaxterWu%s_N%d_R%d_nSteps%d_run%d_main.txt", prefix, heating, params.N, params.R, params.nSteps, params.seed);
+    files.main_file = fopen(s, "w");
+    //printf(s);
+    sprintf(s, "C:/Users/MarvelousNote3/Yandex.Disk/ASAV/Analytics/datasets/%s/2DBaxterWu%s_N%d_R%d_nSteps%d_run%d_agg_stats.txt", prefix, heating, params.N, params.R, params.nSteps, params.seed);
+    files.agg_stats_file = fopen(s, "w");
+    //printf(s);
+    sprintf(s, "C:/Users/MarvelousNote3/Yandex.Disk/ASAV/Analytics/datasets/%s/2DBaxterWu%s_N%d_R%d_nSteps%d_run%d_detailed_stats.txt", prefix, heating, params.N, params.R, params.nSteps, params.seed);
+    files.detailed_stats_file = fopen(s, "w");
+    //printf(s);
+
+
+    mainMemoryPointers host, device;
+    // Allocate space on host
+    //host.spin = (int*)malloc(params.fullLatticeByteSize);
+    CUDA_CHECK(cudaMalloc((void**)&device.spin, params.fullLatticeByteSize));
+
+    host.E = (int*)malloc(params.singleIntRowByteSize);
+    CUDA_CHECK(cudaMalloc((void**)&device.E, params.singleIntRowByteSize));
+
+    host.replica_statistics = (replicaStatistics*)malloc(params.replicaStatisticsByteSize);
+    CUDA_CHECK(cudaMalloc((void**)&device.replica_statistics, params.replicaStatisticsByteSize));
+
+    host.O = (int*)malloc(params.singleIntRowByteSize);
+    CUDA_CHECK(cudaMalloc((void**)&device.O, params.singleIntRowByteSize));
+
+    host.update = (int*)malloc(params.singleIntRowByteSize);
+    CUDA_CHECK(cudaMalloc((void**)&device.update, params.singleIntRowByteSize));
+
+    host.replica_family = (int*)malloc(params.singleIntRowByteSize);
+    CUDA_CHECK(cudaMalloc((void**)&device.replica_family, params.singleIntRowByteSize));
+
+    // Init Philox
+    void* curand_states = setup_curand_states(params);
+
+
+    initialize_population(curand_states, device, params, initialize_population_mode);
+    initialize_update_arrays(host, params);
+    initialize_print(files);
+
+    calc_device_energy(device, params);
+
+    int upper_energy = 1;
+    int lower_energy = -2 * params.N - 1;
+
+	int U = (params.heat ? lower_energy : upper_energy);	// U is energy ceiling
+
+    int i = 0;
+    while ((U >= lower_energy && !params.heat) || (U <= upper_energy && params.heat)) {
+        printf("U:\t%f between %d and %d; nSteps: %d;\n", 1.0 * U, upper_energy, lower_energy, params.nSteps);
+
+        clock_t equilibrate_time_start = clock();
+
+        equilibrate(curand_states, device, params, U, equlibrate_mode);
+
+        clock_t equilibrate_time_end = clock();
+        equilibrate_ticks += equilibrate_time_end - equilibrate_time_start;
+
+        copyDeviceToHost(host.E, device.E, params.singleIntRowByteSize);
+
+        double X = prepare_resample_arrays(host, params, &U); //
+        if (X == 1 || ++i > 10) {
+            printf("ended with no replicas\n");
+            break;
+        }
+
+        // not U has been lowered to next values - we collect our statistics now, but stritly before updates on replicas
+        double rho_t = calc_family_avg_sq_size(host, params, U);
+        print_main_data(files, U, X, rho_t);
+
+        calc_replica_statistics(device, params, U);
+        copyDeviceToHost(host.replica_statistics, device.replica_statistics, params.replicaStatisticsByteSize);
+        print_agg_stats(host, params, files, U);
+        print_detailed_stats(host, params, files, U);
+
+        // here goes actuall resample
+        copyHostToDevice(device.update, host.update, params.singleIntRowByteSize);
+        update_replicas(device, params);
+
+    }
+
+
+
+    fclose(files.main_file);
+    fclose(files.agg_stats_file);
+    fclose(files.detailed_stats_file);
+
+
+    //free(host.spin);
+    CUDA_CHECK(cudaFree(device.spin));
+
+    free(host.E);
+    CUDA_CHECK(cudaFree(device.E));
+
+    free(host.replica_statistics);
+    CUDA_CHECK(cudaFree(device.replica_statistics));
+
+    free(host.O);
+    CUDA_CHECK(cudaFree(device.O));
+
+    free(host.update);
+    CUDA_CHECK(cudaFree(device.update));
+
+    free(host.replica_family);
+    CUDA_CHECK(cudaFree(device.replica_family));
+
+    CUDA_CHECK(cudaFree(curand_states));
+
+
+    clock_t global_end = clock();
+    double global_time_spend = (double)(global_end - global_start) / CLOCKS_PER_SEC;
+    double equilibrate_time_spend = (double)equilibrate_ticks / CLOCKS_PER_SEC;
+    printf("spend %.2fs, among them %.2fs (%.2f%%) spend on equilibrate\n", global_time_spend, equilibrate_time_spend, 100.0 * equilibrate_time_spend / global_time_spend);
+
+    //copyDeviceToHost(host_kernel_timers, device_kernel_timers, params.R * sizeof(long long int));
+
+    //double kernel_time_spend = (double)host_kernel_timers[0] / (CLOCKS_PER_SEC * params.R);
+    //printf("among them %.2f s (%.2f)%% spend on equilibrate inside kernel\n", kernel_time_spend, 100.0 * kernel_time_spend / global_time_spend);
+    //
+    //double slf_time_spend = (double)host_kernel_timers[1] / (CLOCKS_PER_SEC * params.R);
+    //printf("among them %.2f s (%.2f)%% spend on slf inside kernel\n", slf_time_spend, 100.0 * slf_time_spend / global_time_spend);
+
+    //free(host_kernel_timers);
+    //CUDA_CHECK(cudaFree(device_kernel_timers));
+
+    return 0;
+}
+
+

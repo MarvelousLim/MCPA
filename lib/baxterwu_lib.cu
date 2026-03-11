@@ -1,58 +1,34 @@
 #include "baxterwu_lib.h"
+#include <cuda.h>
 #include <cuda_runtime.h>
 #include <curand_kernel.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 
+#ifdef DLL_EXPORT
+#define DECLSPEC __declspec(dllexport)
+#else
+#define DECLSPEC __declspec(dllimport)
+#endif
 
+#define CUDA_CHECK(ans) { gpu_assert((ans), __FILE__, __LINE__); }
 
 DECLSPEC bool between(float x, float a, float b) {
     return (x <= b && x >= a) || (x >= b && x <= a);
 }
 
-DECLSPEC void gpuAssert(cudaError_t code, const char* file, int line, bool abort) {
+DECLSPEC void gpu_assert(cudaError_t code, const char* file, int line, bool abort) {
     if (code != cudaSuccess) {
         printf("GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
         if (abort) exit(code);
     }
 }
 
-DECLSPEC __host__ __device__ struct neibors_indexes SLF(int j, int L, int N) {
-    //spin lookup function
-    struct neibors_indexes result;
-    result.right = (j + 1) % L + L * (j / L);
-    result.down = (j + L) % N;
-    result.diag = (j + L + 1) % N;
-    return result;
-}
-
-// hardcoded spin suggestion for init
-DECLSPEC __device__ int suggestSpin(curandStatePhilox4_32_10_t* state, int r) {
-    return (2 * (curand(&state[r]) % 2)) - 1;
-};
-
-DECLSPEC __global__ void initializePopulation(curandStatePhilox4_32_10_t* state, int* s, int N, initializePopulationMode mode, int s_a, int s_b, int s_c) {
-/*---------------------------------------------------------------------------------------------
-	Initializes population on gpu(!) by randomly assigning each spin a value from suggestSpin function or using by-hand seeding
-----------------------------------------------------------------------------------------------*/
-	int r = threadIdx.x + blockIdx.x * blockDim.x;
-    for (int k = 0; k < N; k++) {
-        int arrayIndex = r * N + k;
-        if (mode == RANDOM) {
-            int spin = suggestSpin(state, r);
-        }
-        else if (mode == BY_SUBLATTICE) {
-            s[arrayIndex] = (arrayIndex % 3 == 0) * s_a + (arrayIndex % 3 == 1) * s_b + (arrayIndex % 3 == 2) * s_c;
-        }
-        else {
-        };
-    }
-};
-
-DECLSPEC void printSpinSample(int* s, int L, int N, int r) {
-    int arrayIndex = r * N;
-    for (int i = 0; i < L; i++) {
-        for (int j = 0; j < L; j++) {
+DECLSPEC void print_spin_sample(int* s, int r, struct Params params) {
+    int arrayIndex = r * params.N;
+    for (int i = 0; i < params.L; i++) {
+        for (int j = 0; j < params.L; j++) {
             printf("%d ", s[arrayIndex]);
             arrayIndex++;
         }
@@ -61,329 +37,427 @@ DECLSPEC void printSpinSample(int* s, int L, int N, int r) {
     printf("\n");
 };
 
+DECLSPEC void print_replica_row(int* e, struct Params params) {
+    for (int i = 0; i < params.R; i++) {
+        printf("%d ", e[i]);
+    }
+    printf("\n");
+};
 
-//DECLSPEC __device__ struct neibors get_neibors_values(int* s, struct neibors_indexes n_i, int replica_shift) {
-//	return {
-//		s[n_i.right + replica_shift],
-//		s[n_i.down + replica_shift],
-//        s[n_i.diag + replica_shift]
-//	};
-//}
+DECLSPEC __host__ __device__ struct neiborsIndexes SLF(int j, struct Params params) {
+    //spin lookup function
+    struct neiborsIndexes result;
+    int row = params.L * (j / params.L);
+
+    result.left = (j - 1 + params.L) % params.L + row;
+    result.right = (j + 1) % params.L + row;
+
+    result.up = (j - params.L + params.N) % params.N;
+    result.down = (j + params.L) % params.N;
+
+    result.diag_left = (j - 1) % params.L  + (row - params.L + params.N) % params.N;
+    result.diag_right = (j + 1) % params.L + (row + params.L) % params.N;
+
+    return result;
+}
+
+
+// hardcoded spin suggestion for init
+__device__ int suggest_spin(curandStatePhilox4_32_10_t* curand_states, int r) {
+    return (2 * (curand(&curand_states[r]) % 2)) - 1;
+};
+
+__global__ void initialize_population_kernel(curandStatePhilox4_32_10_t* curand_states, struct mainMemoryPointers device, struct Params params, initializePopulationMode mode, int s_a, int s_b, int s_c) {
+	int r = threadIdx.x + blockIdx.x * blockDim.x;
+    int replica_shift = r * params.N;
+
+    for (int k = 0; k < params.N; k++) {
+        int arrayIndex = replica_shift + k;
+        if (mode == random) {
+            device.spin[arrayIndex] = suggest_spin(curand_states, r);
+        }
+        else if (mode == by_sublattice) {
+            device.spin[arrayIndex] = (arrayIndex % 3 == 0) * s_a + (arrayIndex % 3 == 1) * s_b + (arrayIndex % 3 == 2) * s_c;
+        }
+        else {
+        };
+    }
+};
+
+DECLSPEC void initialize_population(void* curand_states, struct mainMemoryPointers device, struct Params params, initializePopulationMode mode, int s_a, int s_b, int s_c) {
+    initialize_population_kernel <<< params.blocks, params.threads >>> ((curandStatePhilox4_32_10_t*)curand_states, device, params, mode, s_a, s_b, s_c);
+    CUDA_CHECK(cudaPeekAtLastError());
+	CUDA_CHECK(cudaDeviceSynchronize());
+}
+
+
+DECLSPEC void initialize_update_arrays(struct mainMemoryPointers host, struct Params params) {
+    for (int i = 0; i < params.R; i++) {
+        host.O[i] = i;
+        host.replica_family[i] = i;
+    }
+}
+
+__global__ void setup_curand_kernel(curandStatePhilox4_32_10_t* state, int seed)
+{
+    int id = threadIdx.x + blockIdx.x * blockDim.x;
+    /* Each thread gets same seed, a different sequence
+       number, no offset */
+    curand_init(seed, id, 0, state + id);
+}
+
+DECLSPEC void* setup_curand_states(struct Params params) {
+    curandStatePhilox4_32_10_t* curand_states = nullptr;
+
+    printf("Allocating %d random states...\n", params.R);
+    CUDA_CHECK(cudaMalloc((void**)&curand_states, params.R * sizeof(curandStatePhilox4_32_10_t)));
+
+    printf("Launching kernel with %d blocks, %d threads...\n", params.blocks, params.threads);
+    setup_curand_kernel <<< params.blocks, params.threads >>> (curand_states, params.seed);
+
+    CUDA_CHECK(cudaPeekAtLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
+
+    return (void*)curand_states;
+}
+
+DECLSPEC void copyHostToDevice(void* dst, void* src, size_t size) {
+    cudaMemcpy(dst, src, size, cudaMemcpyHostToDevice);
+    CUDA_CHECK(cudaPeekAtLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
+}
+
+DECLSPEC void copyDeviceToHost(void* dst, void* src, size_t size) {
+    cudaMemcpy(dst, src, size, cudaMemcpyDeviceToHost);
+    CUDA_CHECK(cudaPeekAtLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
+}
+
+__device__ struct neiborsValues SVLF(struct mainMemoryPointers device, struct neiborsIndexes n_i, int replica_shift) {
+    struct neiborsValues result;
+    result.right = device.spin[n_i.right + replica_shift];
+    result.down = device.spin[n_i.down + replica_shift];
+    result.left = device.spin[n_i.left + replica_shift];
+    result.up = device.spin[n_i.up + replica_shift];
+    result.diag_left = device.spin[n_i.diag_left + replica_shift];
+    result.diag_right = device.spin[n_i.diag_right + replica_shift];
     
-//DECLSPEC __host__ __device__ struct energy_parts localEnergyParts(char currentSpin, struct neibors n) {
-//	// Computes energy of spin i with neighbors a, b, c, d 
-//	// it summirezes each join 2 times
-//	return {
-//		-(currentSpin * n.up)
-//		- (currentSpin * n.right)
-//		- (currentSpin * n.down)
-//		- (currentSpin * n.left)
-//		, (currentSpin * currentSpin)
-//	};
-//}
-//
-//__device__ struct energy_parts addEnergyParts(struct energy_parts A, struct energy_parts B) {
-//	return { A.Ising + B.Ising, A.Blume + B.Blume };
-//}
-//
-//__device__ struct energy_parts subEnergyParts(struct energy_parts A, struct energy_parts B) {
-//	return { A.Ising - B.Ising, A.Blume - B.Blume };
-//}
-//
-//__device__ struct energy_parts calcEnergyParts(char* s, int L, int N, int r) {
-//	struct energy_parts sum = { 0, 0 };
-//	int replica_shift = r * N;
-//
-//	for (int j = 0; j < N; j++) {
-//		// do not forget double joint summarization!
-//		char i = s[j + replica_shift]; // current spin value
-//		struct neibors_indexes n_i = SLF(j, L, N);
-//		struct neibors n = get_neibors_values(s, n_i, replica_shift); // we look into r replica and j spin
-//		struct energy_parts tmp = localEnergyParts(i, n);
-//		sum = addEnergyParts(sum, tmp);
-//	}
-//	return sum;
-//}
-//
-//__device__ int calcEnergyFromParts(struct energy_parts energyParts, int D_div, int D_base) { // D = D_div / D_base
-//	return (D_base * energyParts.Ising / 2) + (D_div * energyParts.Blume); // div 2 because of double joint summarization
-//}
-//
-//__global__ void deviceEnergy(char* s, int* E, int L, int N, int D_div, int D_base) {
-//	int r = threadIdx.x + blockIdx.x * blockDim.x;
-//	struct energy_parts sum = calcEnergyParts(s, L, N, r);
-//	E[r] = calcEnergyFromParts(sum, D_div, D_base);
-//}
-//
-//
-//// hardcoded spin suggestion for equilibration
-//__device__ char suggestSpinSwap(curandStatePhilox4_32_10_t* state, int r, char currentSpin) {
-//	return (currentSpin + 2 + (curand(&state[r]) % 2)) % 3 - 1; // little trick
-//}
-//
-//#define FULL_MASK 0xffffffff
-//
-//__device__ float warpReduceSum(float val)
-//{
-//	for (int offset = warpSize >> 1; offset > 0; offset >>= 1)
-//		val += __shfl_down_sync(FULL_MASK, val, offset);
-//	return val;
-//}
-//
-//__global__ void equilibrate(curandStatePhilox4_32_10_t* state, char* s, int* E, int L, int N, int R, int q, int nSteps, int U, int D_div, int D_base, bool heat) {//, int* acceptance_number) {
-//	/*---------------------------------------------------------------------------------------------
-//		Main Microcanonical Monte Carlo loop.  Performs update sweeps on each replica in the
-//		population;
-//		There, one could change calcEnergyParts for system of carrying arrays of energy parts,
-//		but:
-//			1. This is not the bottleneck (which is for loop over N * nSteps
-//	---------------------------------------------------------------------------------------------*/
-//
-//	int r = threadIdx.x + blockIdx.x * blockDim.x;
-//	int replica_shift = r * N;
-//
-//	struct energy_parts baseEnergyParts = calcEnergyParts(s, L, N, r);
-//
-//	for (int k = 0; k < N * nSteps; k++)
-//	{
-//		int j = curand(&state[r]) % N;
-//		char currentSpin = s[j + replica_shift];
-//		char suggestedSpin = suggestSpinSwap(state, r, currentSpin);
-//		//char suggestedSpin = curand(&state[r]) % 3 - 1;
-//		struct neibors_indexes n_i = SLF(j, L, N);
-//		struct neibors n = get_neibors_values(s, n_i, replica_shift);
-//		struct energy_parts suggestedLocalEnergyParts = localEnergyParts(suggestedSpin, n);
-//
-//		struct energy_parts currentLocalEnergyParts = localEnergyParts(currentSpin, n);
-//		struct energy_parts deltaLocalEnergyParts = subEnergyParts(suggestedLocalEnergyParts, currentLocalEnergyParts);
-//		//local energy delta calculated for single spin; but should be for whole lattice
-//		//thus we need to count Ising part twice - for the neibors change in energy as well
-//		//but not Blume part!
-//		deltaLocalEnergyParts.Ising *= 2;
-//		struct energy_parts suggestedEnergyParts = addEnergyParts(baseEnergyParts, deltaLocalEnergyParts);
-//		int suggestedEnergy = calcEnergyFromParts(suggestedEnergyParts, D_div, D_base);
-//
-//		if ((!heat && (suggestedEnergy + EPSILON < U)) || (heat && (suggestedEnergy - EPSILON > U))) {
-//			baseEnergyParts = suggestedEnergyParts;
-//			E[r] = suggestedEnergy;
-//			s[j + replica_shift] = suggestedSpin;
-//		}
-//	}
-//}
-//
-//__global__ void calcMagnetization(char* s, int* E, int L, int N, int R, int U, int* deviceMagnetization) {//, int* acceptance_number) {
-//
-//	int r = threadIdx.x + blockIdx.x * blockDim.x;
-//	//printf("kernel %d reporting: E = %i, U = %i\n", r, E[r], U);
-//	int replica_shift = r * N;
-//	if (E[r] == U) {
-//		int m = 0;
-//		int c = N;
-//
-//
-//		for (int j = 0; j < N; j++) {
-//			char i = s[j + replica_shift]; // current spin value
-//			m += i;
-//			c -= i * i;
-//		}
-//		//printf("kernel %d reporting success: E = %i, U = %i; m=%i, m_sq=%i\n", r, E[r], U, m, m_sq);
-//
-//		deviceMagnetization[r * STATISTICS_NUMBER + 0] = 1; // number of replicas with E = U
-//		deviceMagnetization[r * STATISTICS_NUMBER + 1] = m; // | magnetization |
-//		deviceMagnetization[r * STATISTICS_NUMBER + 2] = c; // | concentration |
-//
-//		struct energy_parts sum = calcEnergyParts(s, L, N, r);
-//		deviceMagnetization[r * STATISTICS_NUMBER + 3] = sum.Ising / 2; // | ising energy part |
-//		deviceMagnetization[r * STATISTICS_NUMBER + 4] = sum.Blume; // | blume energy part |
-//	}
-//}
-//
-//
-//void CalcPrintAvgE(FILE* efile, int* E, int R, int U, int D_base) {
-//	float avg = 0.0;
-//	for (int i = 0; i < R; i++) {
-//		avg += E[i];
-//	}
-//	avg /= R;
-//	fprintf(efile, "%f %f\n", 1.0 * U / D_base, avg);
-//	printf("E: %f\n", avg);
-//}
-//
-//void CalculateRhoT(const int* replicaFamily, FILE* ptfile, int R, int U, int D_base) {
-//	// histogram of family sizes
-//	int* famHist = (int*)calloc(R, sizeof(int));
-//	for (int i = 0; i < R; i++) {
-//		famHist[replicaFamily[i]]++;
-//	}
-//	double sum = 0;
-//	for (int i = 0; i < R; i++) {
-//		sum += famHist[i] * famHist[i];
-//	}
-//	sum /= R;
-//	fprintf(ptfile, "%f %f\n", 1.0 * U / D_base, sum);
-//	sum /= R;
-//	printf("RhoT:\t%f\n", sum);
-//	free(famHist);
-//}
-//
-//
-//void Swap(int* A, int i, int j) {
-//	int temp = A[i];
-//	A[i] = A[j];
-//	A[j] = temp;
-//}
-//
-//void quicksort(int* E, int* O, int left, int right, int direction) {
-//	int Min = (left + right) / 2;
-//	int i = left;
-//	int j = right;
-//	double pivot = direction * E[O[Min]];
-//
-//	while (left < j || i < right)
-//	{
-//		while (direction * E[O[i]] > pivot)
-//			i++;
-//		while (direction * E[O[j]] < pivot)
-//			j--;
-//
-//		if (i <= j) {
-//			Swap(O, i, j);
-//			i++;
-//			j--;
-//		}
-//		else {
-//			if (left < j)
-//				quicksort(E, O, left, j, direction);
-//			if (i < right)
-//				quicksort(E, O, i, right, direction);
-//			return;
-//		}
-//	}
-//}
-//
-//int resample(int* E, int* O, int* update, int* replicaFamily, int R, int* U, int D_base, FILE* Xfile, bool heat) {
-//	//std::sort(O, O + R, [&E](int a, int b) {return E[a] > E[b]; }); // greater sign for descending order
-//	quicksort(E, O, 0, R - 1, 1 - 2 * heat); //Sorts O by energy
-//
-//	int nCull = 0;
-//	//fprintf(e2file, "%f %i\n", 1.0 * (*U) / D_base, E[O[0]]);
-//
-//	//update energy seiling to the highest available energy
-//	int U_old = *U;
-//	int U_new;
-//
-//	for (int i = 0; i < R; i++) {
-//		U_new = E[O[i]];
-//		if ((!heat && U_new < U_old - EPSILON) || (heat && U_new > U_old + EPSILON)) {
-//			*U = U_new;
-//			break;
-//		}
-//	}
-//
-//	if (fabs(*U - U_old) <= EPSILON) {
-//		return 1; // out of replicas
-//	}
-//
-//	while ((!heat && E[O[nCull]] >= *U - EPSILON) || (heat && E[O[nCull]] <= *U + EPSILON)) {
-//		nCull++;
-//		if (nCull == R) {
-//			break;
-//		}
-//	}
-//	// culling fraction
-//	double X = nCull;
-//	X /= R;
-//	//printf("U: %d %d %d\n", U_new, U_old, *U);
-//	fprintf(Xfile, "%f %f\n", 1.0 * (*U) / D_base, X);
-//	fflush(Xfile);
-//	printf("Culling fraction:\t%f\n", X);
-//	fflush(stdout);
-//	for (int i = 0; i < R; i++)
-//		update[i] = i;
-//	if (nCull < R) {
-//		for (int i = 0; i < nCull; i++) {
-//			// random selection of unculled replica
-//			int r = (rand() % (R - nCull)) + nCull; // different random number generator for resampling
-//			update[O[i]] = O[r];
-//			replicaFamily[O[i]] = replicaFamily[O[r]];
-//		}
-//	}
-//
-//	return 0;
-//}
-//
-//void PrintMagnetization(int U, int D_base, FILE* mfile, int R, int N, int* hostMagnetization) {
-//	int culled_replica_number = 0;
-//	double m, c, e_ising, e_blume;
-//	double n[STATISTICS_NUMBER_2];
-//	for (int j = 0; j < STATISTICS_NUMBER_2; j++) {
-//		n[j] = 0.0;
-//	}
-//
-//	for (int i = 0; i < R; i++) {
-//		culled_replica_number += hostMagnetization[i * STATISTICS_NUMBER + 0];
-//		m = double(hostMagnetization[i * STATISTICS_NUMBER + 1]);
-//		c = double(hostMagnetization[i * STATISTICS_NUMBER + 2]);
-//
-//		n[0] += abs(m / N);
-//		n[1] += (m / N) * (m / N);
-//		n[2] += (m / N) * (m / N) * abs(m / N);
-//		n[3] += (m / N) * (m / N) * (m / N) * (m / N);
-//		n[4] += abs(c / N);
-//		n[5] += (c / N) * (c / N);
-//		n[6] += (c / N) * (c / N) * abs(c / N);
-//		n[7] += (c / N) * (c / N) * (c / N) * (c / N);
-//
-//		e_ising = double(hostMagnetization[i * STATISTICS_NUMBER + 3]);
-//		e_blume = double(hostMagnetization[i * STATISTICS_NUMBER + 4]);
-//
-//		n[8] += e_ising / N;
-//		n[9] += e_blume / N;
-//	}
-//
-//
-//	fprintf(mfile, "%f %i ", 1.0 * U / D_base, culled_replica_number);
-//	for (int j = 0; j < STATISTICS_NUMBER_2; j++) {
-//		fprintf(mfile, "%f ", n[j] / culled_replica_number);
-//	}
-//	fprintf(mfile, "\n");
-//	fflush(mfile);
-//	fflush(mfile);
-//}
-//
-//__global__ void updateReplicas(char* s, int* E, int* update, int N) {
-//	/*---------------------------------------------------------------------------------------------
-//		Updates the population after the resampling step (done on cpu) by replacing indicated
-//		replicas by the proper other replica
-//	-----------------------------------------------------------------------------------------------*/
-//	int r = threadIdx.x + blockIdx.x * blockDim.x;
-//	int replica_shift = r * N;
-//	int source_r = update[r];
-//	int source_replica_shift = source_r * N;
-//	if (source_r != r) {
-//		for (int j = 0; j < N; j++) {
-//			s[j + replica_shift] = s[j + source_replica_shift];
-//		}
-//		E[r] = E[update[r]];
-//	}
-//}
-//
-//__global__ void setup_kernel(curandStatePhilox4_32_10_t* state, int seed)
-//{
-//	int id = threadIdx.x + blockIdx.x * blockDim.x;
-//	/* Each thread gets same seed, a different sequence
-//	   number, no offset */
-//	curand_init(seed, id, 0, state + id);
-//}
-//
+    return result;
+}
+
+__device__ int local_energy(int currentSpin, struct neiborsValues n) {
+	// Computes energy of spin i with its neigborts triangles (6)
+	// it summirezes each triangle 3 times
+    int result = 0;
+    result += n.diag_left * n.up * currentSpin;
+    result += n.diag_left * n.left * currentSpin;
+
+    result += n.diag_right * n.down * currentSpin;
+    result += n.diag_right * n.right * currentSpin;
+
+    result += n.down * n.left * currentSpin;
+    result += n.up * n.right * currentSpin;
+
+	return -1 * result;
+}
 
 
+__global__ void calc_device_energy_kernel(struct mainMemoryPointers device, struct Params params) {
+    int r = threadIdx.x + blockIdx.x * blockDim.x;
+    int sum = 0;
+	int replica_shift = r * params.N;
+
+	for (int j = 0; j < params.N; j++) {
+		int currentSpin = device.spin[j + replica_shift];
+		struct neiborsIndexes n_i = SLF(j, params);
+		struct neiborsValues n = SVLF(device, n_i, replica_shift); // we look into r replica and j spin
+
+        sum += local_energy(currentSpin, n);
+	}
+
+    device.E[r] = sum / 3; // local energy calcs parkets with overlap 3
+}
+
+DECLSPEC void calc_device_energy(struct mainMemoryPointers device, struct Params params) {
+    calc_device_energy_kernel <<< params.blocks, params.threads >>> (device, params);
+    CUDA_CHECK(cudaPeekAtLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
+}
+
+// hardcoded spin suggestion for equilibration
+__device__ int suggest_spin_swap(int current_spin) {
+	return -current_spin;
+}
+
+__global__ void equilibrate_kernel(curandStatePhilox4_32_10_t* curand_states, struct mainMemoryPointers device, struct Params params, int U, enum equlibrateMode equlibrate_mode) {
+	/*---------------------------------------------------------------------------------------------
+		Main Microcanonical Monte Carlo loop.  Performs update sweeps on each replica in the
+		population
+	---------------------------------------------------------------------------------------------*/
+    //long long int kernel_start = clock();
+    //int SLF_spend = 0;
+
+	int r = threadIdx.x + blockIdx.x * blockDim.x;
+	int replica_shift = r * params.N;
+    device.replica_statistics[r].flip_count = 0;
+
+	for (int k = 0; k < (equlibrate_mode == single_step ? 1 : params.N * params.nSteps); k++)
+	{
+		int j = curand(&curand_states[r]) % params.N;
+		int current_spin = device.spin[j + replica_shift];
+		int suggested_spin = suggest_spin_swap(current_spin);
+
+        //int SLF_start = clock();
+
+		struct neiborsIndexes n_i = SLF(j, params);
+		struct neiborsValues n = SVLF(device, n_i, replica_shift);
+
+        //int SLF_end = clock();
+
+        //SLF_spend += SLF_end - SLF_start;
+
+        //printf("kernel %d: %d", r, SLF_spend);
+
+        int current_local_energy = local_energy(current_spin, n);
+		int suggested_local_energy = local_energy(suggested_spin, n);
+
+		int suggested_energy = device.E[r] - current_local_energy + suggested_local_energy;
+
+		if ((!params.heat && (suggested_energy < U)) || (params.heat && (suggested_energy > U))) {
+            device.E[r] = suggested_energy;
+            device.spin[j + replica_shift] = suggested_spin;
+            device.replica_statistics[r].flip_count++;
+		}
+	}
+
+    //int kernel_end = clock();
+    //kernel_timers[r] += kernel_end - kernel_start;
+    //if (r == 0)
+    //    printf("kernel %d: %d\n", r, (kernel_end - kernel_start));
+    //atomicAdd(&kernel_timers[1], (float)SLF_spend);
+}
+
+DECLSPEC void equilibrate(void* curand_states, struct mainMemoryPointers device, struct Params params, int U, enum equlibrateMode equlibrate_mode) {
+    equilibrate_kernel <<< params.blocks, params.threads >>> ((curandStatePhilox4_32_10_t*)curand_states, device, params, U, equlibrate_mode);
+    CUDA_CHECK(cudaPeekAtLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
+}
 
 
+void swap(int* A, int i, int j) {
+    int temp = A[i];
+    A[i] = A[j];
+    A[j] = temp;
+}
+
+void quicksort(struct mainMemoryPointers host, int left, int right, int direction) {
+    int Min = (left + right) / 2;
+    int i = left;
+    int j = right;
+    double pivot = direction * host.E[host.O[Min]];
+
+    while (left < j || i < right)
+    {
+        while (direction * host.E[host.O[i]] > pivot)
+            i++;
+        while (direction * host.E[host.O[j]] < pivot)
+            j--;
+
+        if (i <= j) {
+            swap(host.O, i, j);
+            i++;
+            j--;
+        }
+        else {
+            if (left < j)
+                quicksort(host, left, j, direction);
+            if (i < right)
+                quicksort(host, i, right, direction);
+            return;
+        }
+    }
+}
+
+DECLSPEC double prepare_resample_arrays(struct mainMemoryPointers host, struct Params params, int* U) {
+	quicksort(host, 0, params.R - 1, 1 - 2 * params.heat); //Sorts O by energy
+
+	int nCull = 0;
+	//fprintf(e2file, "%f %i\n", 1.0 * (*U) / D_base, E[O[0]]);
+
+	//update energy seiling to the highest available energy
+	int U_old = *U;
+	int U_new;
+
+	for (int i = 0; i < params.R; i++) {
+		U_new = host.E[host.O[i]];
+		if ((!params.heat && U_new < U_old) || (params.heat && U_new > U_old)) {
+			*U = U_new;
+			break;
+		}
+	}
+
+	if (*U == U_old) {
+		return 1; // out of replicas
+	}
+
+	while ((!params.heat && host.E[host.O[nCull]] >= *U) || (params.heat && host.E[host.O[nCull]] <= *U)) {
+		nCull++;
+		if (nCull == params.R) {
+			break;
+		}
+	}
+	// culling fraction
+	double X = nCull;
+	X /= params.R;
+	//printf("U: %d %d %d\n", U_new, U_old, *U);
+	printf("Culling factor:\t%f\n", X);
+	fflush(stdout);
+
+	for (int i = 0; i < params.R; i++)
+		host.update[i] = i;
+	if (nCull < params.R) {
+		for (int i = 0; i < nCull; i++) {
+			// random selection of unculled replica
+			int r = (rand() % (params.R - nCull)) + nCull; // different random number generator for resampling
+            host.update[host.O[i]] = host.O[r];
+            host.replica_family[host.O[i]] = host.replica_family[host.O[r]];
+		}
+	}
+
+	return X;
+}
+
+DECLSPEC double calc_family_avg_sq_size(struct mainMemoryPointers host, struct Params params, int U) {
+    // histogram of family sizes
+    int* famHist = (int*)calloc(params.R, sizeof(int));
+
+    for (int i = 0; i < params.R; i++) {
+        famHist[host.replica_family[i]]++;
+    }
+    double rho_t = 0.0;
+    for (int i = 0; i < params.R; i++) {
+        rho_t += famHist[i] * famHist[i];
+    }
+    rho_t /= params.R;
+    rho_t /= params.R;
+    printf("RhoT:\t%f\n", rho_t);
+
+    free(famHist);
+
+    return rho_t;
+}
+
+DECLSPEC void print_main_data(struct Files files, int U, double X, double rho_t) {
+    fprintf(files.main_file, "%f\t%f\t%f\n", 1.0 * U, X, rho_t);
+    fflush(files.main_file);
+};
+
+__global__ void update_replicas_kernel(struct mainMemoryPointers device, struct Params params) {
+	/*---------------------------------------------------------------------------------------------
+		Updates the population after the resampling step (done on cpu) by replacing indicated
+		replicas by the proper other replica
+	-----------------------------------------------------------------------------------------------*/
+	int r = threadIdx.x + blockIdx.x * blockDim.x;
+	int replica_shift = r * params.N;
+	int source_r = device.update[r];
+	int source_replica_shift = source_r * params.N;
+	if (source_r != r) {
+		for (int j = 0; j < params.N; j++) {
+			device.spin[j + replica_shift] = device.spin[j + source_replica_shift];
+		}
+		device.E[r] = device.E[device.update[r]];
+	}
+}
+
+DECLSPEC void update_replicas(struct mainMemoryPointers device, struct Params params) {
+    update_replicas_kernel <<< params.blocks, params.threads >>> (device, params);
+    CUDA_CHECK(cudaPeekAtLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
+}
+
+__global__ void calc_replica_statistics_kernel(struct mainMemoryPointers device, struct Params params, int U) {
+    int r = threadIdx.x + blockIdx.x * blockDim.x;
+    int replica_shift = r * params.N;
+
+    if (device.E[r] == U) {
+
+        for (int j = 0; j < params.N; j++) {
+            int current_spin = device.spin[j + replica_shift];
+            int sublattice_index = j % 3;
+
+            device.replica_statistics[r].magnetization[sublattice_index] += current_spin;
+
+            struct neiborsIndexes n_i = SLF(j, params);
+            struct neiborsValues n = SVLF(device, n_i, replica_shift);
+
+            device.replica_statistics[r].polarization[sublattice_index] += current_spin * (n.up + n.left + n.diag_right);
+        }
+    }
+};
+
+DECLSPEC void calc_replica_statistics(struct mainMemoryPointers device, struct Params params, int U) {
+    cudaMemset(device.replica_statistics, 0, params.replicaStatisticsByteSize);
+    calc_replica_statistics_kernel <<< params.blocks, params.threads >>> (device, params, U);
+    CUDA_CHECK(cudaPeekAtLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
+};
+
+DECLSPEC void initialize_print(struct Files files) {
+    fprintf(files.main_file, "E\tculling_factor\treplica_family_avg_sq\n");
+    fflush(files.main_file);
+
+    fprintf(files.agg_stats_file, "E\tn\tflip_count\tm_a\tm_b\tm_c\tp_a\tp_b\tp_c\n");
+    fflush(files.agg_stats_file);
+
+    fprintf(files.detailed_stats_file, "E\tflip_count\tm_a\tm_b\tm_c\tp_a\tp_b\tp_c\n");
+    fflush(files.detailed_stats_file);
+};
+
+DECLSPEC void print_detailed_stats(struct mainMemoryPointers host, struct Params params, struct Files files, int U){
+    for (int i = 0; i < params.R; i++) {
+        if (host.E[i] == U) {
+            fprintf(files.detailed_stats_file, "%f\t", 1.0 * U);
+            fprintf(files.detailed_stats_file, "%d\t", host.replica_statistics[i].flip_count);
+            for (int j = 0; j < 3; j++)
+                fprintf(files.detailed_stats_file, "%d\t", host.replica_statistics[i].magnetization[j]);
+            for (int j = 0; j < 3; j++)
+                fprintf(files.detailed_stats_file, "%d\t", host.replica_statistics[i].polarization[j]);
+            fprintf(files.detailed_stats_file, "\n");
+        }
+    }
+    fflush(files.detailed_stats_file);
+}
 
 
+DECLSPEC void print_agg_stats(struct mainMemoryPointers host, struct Params params, struct Files files, int U) {
+    int culled_replica_number = 0;
+    int sum_flip_count = 0;
+    int sum_magnetization[3] = { 0, 0, 0 };
+    int sum_polarization[3] = { 0, 0, 0 };
 
-// All other function implementations go here
-//}
+    for (int i = 0; i < params.R; i++) {
+        if (host.E[i] == U) {
+            culled_replica_number++;
+            sum_flip_count += host.replica_statistics[i].flip_count;
+            for (int j = 0; j < 3; j++)
+                sum_magnetization[j] += host.replica_statistics[i].magnetization[j];
+            for (int j = 0; j < 3; j++)
+                sum_polarization[j] += host.replica_statistics[i].polarization[j];
+        }
+    }
+    fprintf(files.agg_stats_file, "%f\t", 1.0 * U);
+    
+    fprintf(files.agg_stats_file, "%d\t", culled_replica_number);
+    fprintf(files.agg_stats_file, "%f\t", 1.0 * sum_flip_count / culled_replica_number);
+    for (int j = 0; j < 3; j++)
+        fprintf(files.agg_stats_file, "%f\t", 1.0 * sum_magnetization[j] / culled_replica_number);
+    for (int j = 0; j < 3; j++)
+        fprintf(files.detailed_stats_file, "%f\t", 1.0 * sum_polarization[j] / culled_replica_number);
+    fprintf(files.detailed_stats_file, "\n");
+
+    fflush(files.detailed_stats_file);
+
+};
+
 
 

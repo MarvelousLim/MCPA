@@ -1,0 +1,88 @@
+{
+    "extension": "ncu-proj",
+    "files": [
+        {
+            "path": "sus.txt.ncu-rep"
+        },
+        {
+            "path": "5.txt.ncu-rep"
+        },
+        {
+            "is_open": true,
+            "path": "6.txt.ncu-rep"
+        }
+    ],
+    "launcher": {
+        "activity/interactiveprofile/cachecontrol": "Flush All",
+        "activity/interactiveprofile/clockcontrol": "Base",
+        "activity/interactiveprofile/disableprofilingstartstop": false,
+        "activity/interactiveprofile/enablecpustacksupport": true,
+        "activity/interactiveprofile/enablenvtxsupport": true,
+        "activity/interactiveprofile/enableprofilingfromstart": true,
+        "activity/interactiveprofile/graphprofiling": "Node",
+        "activity/interactiveprofile/importsource": false,
+        "activity/occupancycalculator/file": "",
+        "activity/profile/applyrules": true,
+        "activity/profile/appreplaybuffer": "File",
+        "activity/profile/appreplaymatch": "Grid",
+        "activity/profile/appreplaymode": "Strict",
+        "activity/profile/cachecontrol": "Flush All",
+        "activity/profile/checkexitcode": true,
+        "activity/profile/clockcontrol": "Base",
+        "activity/profile/devices": "",
+        "activity/profile/disableprofilingstartstop": false,
+        "activity/profile/enablecpustacksupport": true,
+        "activity/profile/enablenvtxsupport": false,
+        "activity/profile/enableprofilingfromstart": true,
+        "activity/profile/filtermode": "Global",
+        "activity/profile/forceoverwrite": true,
+        "activity/profile/graphprofiling": "Graph",
+        "activity/profile/importsource": false,
+        "activity/profile/kernelid": "",
+        "activity/profile/kernelname": "",
+        "activity/profile/kernelnamebase": "Function",
+        "activity/profile/kill": false,
+        "activity/profile/launchcapturecount": 0,
+        "activity/profile/launchskipbeforematchcount": 0,
+        "activity/profile/launchskipcount": 0,
+        "activity/profile/nvtxincludeexcludeoptions": "",
+        "activity/profile/outputfile": "C:/Users/MarvelousNote3/Yandex.Disk/ASAV/MCPA/nSight/%i.txt",
+        "activity/profile/pmsamplingbuffersize": 0,
+        "activity/profile/pmsamplinginterval": 0,
+        "activity/profile/pmsamplingmaxpasses": 0,
+        "activity/profile/rangefilteroptions": "",
+        "activity/profile/rangereplayoptions": "",
+        "activity/profile/replaymode": "Kernel",
+        "activity/profile/samplingBufferSize": 33554432,
+        "activity/profile/samplingInterval": 5,
+        "activity/profile/samplingIntervalAuto": true,
+        "activity/profile/samplingMaxPasses": 5,
+        "activity/profile/sourcefolders": "",
+        "activity/profile/targetprocesses": "All",
+        "activity/systemtrace/target/arguments": "0 18 256 512 10 0 --trace=cuda",
+        "activity/systemtrace/target/command_line": "\"C:/Users/MarvelousNote3/Yandex.Disk/ASAV/MCPA/x64/Release/main.exe\" 0 18 256 512 10 0 --trace=cuda",
+        "activity/systemtrace/target/process_name": "C:/Users/MarvelousNote3/Yandex.Disk/ASAV/MCPA/x64/Release/main.exe",
+        "platform/linux (x86_64)/device": "",
+        "platform/linux/arguments": "",
+        "platform/linux/environment": "",
+        "platform/linux/executable": "",
+        "platform/linux/workingdir": "",
+        "platform/win32/arguments": "0 18 256 512 10 0 --trace=cuda",
+        "platform/win32/arguments/history": [
+            "0 18 256 512 10 0 --trace=cuda",
+            "0 18 256 512 10 0",
+            "0 18 256 512 10 1"
+        ],
+        "platform/win32/environment": "",
+        "platform/win32/executable": "C:/Users/MarvelousNote3/Yandex.Disk/ASAV/MCPA/x64/Release/main.exe",
+        "platform/win32/executable/history": [
+            "C:/Users/MarvelousNote3/Yandex.Disk/ASAV/MCPA/x64/Release/main.exe",
+            "C:/Users/MarvelousNote3/Yandex.Disk/ASAV/MCPA/x64/Release/tests.exe"
+        ],
+        "platform/win32/workingdir": "",
+        "platform/windows/device": "localhost"
+    },
+    "project_name": "nMCPA",
+    "uuid": "{edb1330c-642d-449f-b008-83e9791fcb11}",
+    "version": "1.0"
+}
