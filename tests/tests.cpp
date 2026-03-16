@@ -12,7 +12,7 @@
 
 int main()
 {
-    testMode test_mode = calc_replica_statistics_test;
+    testMode test_mode = local_energy_test;
     statisticsMode statistics_mode = detailed;
     equlibrateMode equlibrate_mode = single_step;
 
@@ -24,7 +24,7 @@ int main()
     }
 
     Params params;
-    params.L = 10;
+    params.L = 18;
     params.N = params.L * params.L;
     params.seed = 1;
     params.blocks = 1;
@@ -70,7 +70,7 @@ int main()
 
     struct neiborsIndexes neibors_indexes_test = SLF(0, params);
 
-    if (test_mode == ALL or test_mode == slf){
+    if (test_mode == ALL or test_mode == slf_test){
         std::cout << "neibors_indexes section" << std::endl;
         std::cout << "neibors_indexes_test: "
             << neibors_indexes_test.right << ' '
@@ -120,7 +120,7 @@ int main()
 
             copyDeviceToHost(host.E, device.E, params.singleIntRowByteSize);
 
-            print_replica_row(host.E, params);
+            print_replica_row(host.E, params, 10);
 
         }
 
@@ -138,14 +138,14 @@ int main()
 
             copyDeviceToHost(host.E, device.E, params.singleIntRowByteSize);
 
-            print_replica_row(host.E, params);
+            print_replica_row(host.E, params, 10);
 
         }
     }
 
 
     //SLF tests
-    if (test_mode == ALL or test_mode == slf) {
+    if (test_mode == ALL or test_mode == slf_test) {
         {
             std::cout << "SLF test: middle" << std::endl;
 
@@ -153,99 +153,14 @@ int main()
 
             copyDeviceToHost(host.spin, device.spin, params.fullLatticeByteSize);
 
-            neibors_indexes_test = SLF(45, params);
-
-            host.spin[neibors_indexes_test.right] = 3;
-            host.spin[neibors_indexes_test.left] = 6;
-            host.spin[neibors_indexes_test.up] = 2;
-            host.spin[neibors_indexes_test.down] = 5;
-            host.spin[neibors_indexes_test.diag_left] = 1;
-            host.spin[neibors_indexes_test.diag_right] = 4;
-
-
-            print_spin_sample(host.spin, 0, params);
-
-        }
-
-
-        {
-            std::cout << "SLF test: angle" << std::endl;
-
-            initialize_population(curand_states, device, params, by_sublattice, 0, 0, 0);
-
-            copyDeviceToHost(host.spin, device.spin, params.fullLatticeByteSize);
-
             neibors_indexes_test = SLF(0, params);
 
-            host.spin[neibors_indexes_test.right] = 3;
-            host.spin[neibors_indexes_test.left] = 6;
-            host.spin[neibors_indexes_test.up] = 2;
-            host.spin[neibors_indexes_test.down] = 5;
             host.spin[neibors_indexes_test.diag_left] = 1;
-            host.spin[neibors_indexes_test.diag_right] = 4;
-
-
-            print_spin_sample(host.spin, 0, params);
-
-        }
-
-        {
-            std::cout << "SLF test: angle" << std::endl;
-
-            initialize_population(curand_states, device, params, by_sublattice, 0, 0, 0);
-
-            copyDeviceToHost(host.spin, device.spin, params.fullLatticeByteSize);
-
-            neibors_indexes_test = SLF(99, params);
-
-            host.spin[neibors_indexes_test.right] = 3;
-            host.spin[neibors_indexes_test.left] = 6;
             host.spin[neibors_indexes_test.up] = 2;
-            host.spin[neibors_indexes_test.down] = 5;
-            host.spin[neibors_indexes_test.diag_left] = 1;
-            host.spin[neibors_indexes_test.diag_right] = 4;
-
-
-            print_spin_sample(host.spin, 0, params);
-
-        }
-
-        {
-            std::cout << "SLF test: angle" << std::endl;
-
-            initialize_population(curand_states, device, params, by_sublattice, 0, 0, 0);
-
-            copyDeviceToHost(host.spin, device.spin, params.fullLatticeByteSize);
-
-            neibors_indexes_test = SLF(10, params);
-
             host.spin[neibors_indexes_test.right] = 3;
-            host.spin[neibors_indexes_test.left] = 6;
-            host.spin[neibors_indexes_test.up] = 2;
-            host.spin[neibors_indexes_test.down] = 5;
-            host.spin[neibors_indexes_test.diag_left] = 1;
             host.spin[neibors_indexes_test.diag_right] = 4;
-
-
-            print_spin_sample(host.spin, 0, params);
-
-        }
-
-        {
-            std::cout << "SLF test: angle" << std::endl;
-
-            initialize_population(curand_states, device, params, by_sublattice, 0, 0, 0);
-
-            copyDeviceToHost(host.spin, device.spin, params.fullLatticeByteSize);
-
-            neibors_indexes_test = SLF(90, params);
-
-            host.spin[neibors_indexes_test.right] = 3;
-            host.spin[neibors_indexes_test.left] = 6;
-            host.spin[neibors_indexes_test.up] = 2;
             host.spin[neibors_indexes_test.down] = 5;
-            host.spin[neibors_indexes_test.diag_left] = 1;
-            host.spin[neibors_indexes_test.diag_right] = 4;
+            host.spin[neibors_indexes_test.left] = 6;
 
 
             print_spin_sample(host.spin, 0, params);
@@ -257,19 +172,14 @@ int main()
     // Local Energy (changes) tests
     if (test_mode == ALL or test_mode == local_energy_test) {
         std::cout << "local energy test" << std::endl;
-        initialize_population(curand_states, device, params, by_sublattice, 1, 1, 1);
+        initialize_population(curand_states, device, params, strips, 1, -1, -1);
         calc_device_energy(device, params);
 
+        copyDeviceToHost(host.spin, device.spin, params.fullLatticeByteSize);
+        copyDeviceToHost(host.E, device.E, params.singleIntRowByteSize);
 
-        for (int i = 0; i < 10; i++) {
-            copyDeviceToHost(host.spin, device.spin, params.fullLatticeByteSize);
-            copyDeviceToHost(host.E, device.E, params.singleIntRowByteSize);
-
-            print_spin_sample(host.spin, 0, params);
-            print_replica_row(host.E, params);
-
-            equilibrate(curand_states, device, params, 1000, equlibrate_mode); // single step
-        }
+        print_spin_sample(host.spin, 0, params);
+        print_replica_row(host.E, params, 10);
 
     }
 
@@ -278,15 +188,29 @@ int main()
         std::cout << "replica statistics test" << std::endl;
         initialize_population(curand_states, device, params, by_sublattice, 1, 1, 1);
         calc_device_energy(device, params);
+        copyDeviceToHost(host.E, device.E, params.singleIntRowByteSize);
+        print_replica_row(host.E, params, 10);
 
-        for (int i = 0; i < 10; i++) {
+        for (int i = 0; i < 100; i++) {
+
+            equilibrate(curand_states, device, params, 1000); // single step
             copyDeviceToHost(host.spin, device.spin, params.fullLatticeByteSize);
             copyDeviceToHost(host.E, device.E, params.singleIntRowByteSize);
 
-            equilibrate(curand_states, device, params, 1000, equlibrate_mode); // single step
-
             print_spin_sample(host.spin, 0, params);
-            print_replica_row(host.E, params);
+
+            int X = host.E[0];
+            print_replica_row(host.E, params, 10);
+
+            calc_device_energy(device, params);
+            copyDeviceToHost(host.E, device.E, params.singleIntRowByteSize);
+            print_replica_row(host.E, params, 10);
+
+            if (X != host.E[0]) {
+                printf("Gotcha!\n");
+                break;
+            }
+                
 
             //prepare_resample_arrays(host, params, files, &U);
         }
@@ -305,14 +229,14 @@ int main()
             copyDeviceToHost(host.E, device.E, params.singleIntRowByteSize);
 
             print_spin_sample(host.spin, 0, params);
-            print_replica_row(host.E, params);
+            print_replica_row(host.E, params, 10);
 
-            equilibrate(curand_states, device, params, 1000, equlibrate_mode); // single step
+            equilibrate(curand_states, device, params, 1000); // single step
         
             calc_replica_statistics(device, params, 0);
             copyDeviceToHost(host.replica_statistics, device.replica_statistics, params.replicaStatisticsByteSize);
 
-            print_detailed_stats(host, params, files, 0);
+            print_detailed_stats(host, params, files, 0, 1000);
             print_agg_stats(host, params, files, 0);
 
         }

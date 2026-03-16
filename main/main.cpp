@@ -15,7 +15,7 @@ int main(int argc, char* argv[]) {
 
     statisticsMode statistics_mode = detailed;
     equlibrateMode equlibrate_mode = normal;
-    initializePopulationMode initialize_population_mode = random;
+    initializePopulationMode initialize_population_mode = random_pop;
 
     Params params;
     params.seed = atoi(argv[1]); 
@@ -56,7 +56,7 @@ int main(int argc, char* argv[]) {
 
     mainMemoryPointers host, device;
     // Allocate space on host
-    //host.spin = (int*)malloc(params.fullLatticeByteSize);
+    host.spin = (int*)malloc(params.fullLatticeByteSize);
     CUDA_CHECK(cudaMalloc((void**)&device.spin, params.fullLatticeByteSize));
 
     host.E = (int*)malloc(params.singleIntRowByteSize);
@@ -84,18 +84,22 @@ int main(int argc, char* argv[]) {
 
     calc_device_energy(device, params);
 
-    int upper_energy = 1;
-    int lower_energy = -2 * params.N - 1;
+    int upper_energy = 2 * params.N + 2;
+    int lower_energy = -2 * params.N - 2;
 
 	int U = (params.heat ? lower_energy : upper_energy);	// U is energy ceiling
 
-    int i = 0;
+    //int i = 0;
+    int no_replicas_try_again_counter = 0;
+    int break_flg = 0;
+
     while ((U >= lower_energy && !params.heat) || (U <= upper_energy && params.heat)) {
         printf("U:\t%f between %d and %d; nSteps: %d;\n", 1.0 * U, upper_energy, lower_energy, params.nSteps);
 
+
         clock_t equilibrate_time_start = clock();
 
-        equilibrate(curand_states, device, params, U, equlibrate_mode);
+        equilibrate(curand_states, device, params, U);
 
         clock_t equilibrate_time_end = clock();
         equilibrate_ticks += equilibrate_time_end - equilibrate_time_start;
@@ -103,24 +107,39 @@ int main(int argc, char* argv[]) {
         copyDeviceToHost(host.E, device.E, params.singleIntRowByteSize);
 
         double X = prepare_resample_arrays(host, params, &U); //
-        if (X == 1 || ++i > 10) {
-            printf("ended with no replicas\n");
-            break;
+        if (X == 1) {
+            if (no_replicas_try_again_counter < 10) {
+                printf("try again number %d at U=%d\n", no_replicas_try_again_counter, U);
+                //if X == 1 then U stays the same as in prepare_resample_arrays function, and we try again
+                no_replicas_try_again_counter++;
+                continue;
+            }
+            else {
+                printf("ended with no replicas\n");
+                break_flg = 1;
+            }
         }
 
-        // not U has been lowered to next values - we collect our statistics now, but stritly before updates on replicas
+        // now U has been lowered to next values - we collect our statistics now, but stritly before updates on replicas
         double rho_t = calc_family_avg_sq_size(host, params, U);
         print_main_data(files, U, X, rho_t);
 
         calc_replica_statistics(device, params, U);
         copyDeviceToHost(host.replica_statistics, device.replica_statistics, params.replicaStatisticsByteSize);
+
         print_agg_stats(host, params, files, U);
-        print_detailed_stats(host, params, files, U);
+        print_detailed_stats(host, params, files, U, 100);
+
+        //copyDeviceToHost(host.spin, device.spin, params.R * sizeof(int));
+        //print_replica_row(host.E, params, 1);
+        //print_spin_sample(host.spin, 0, params);
+
+        if (break_flg)
+            break;
 
         // here goes actuall resample
         copyHostToDevice(device.update, host.update, params.singleIntRowByteSize);
         update_replicas(device, params);
-
     }
 
 
@@ -130,7 +149,7 @@ int main(int argc, char* argv[]) {
     fclose(files.detailed_stats_file);
 
 
-    //free(host.spin);
+    free(host.spin);
     CUDA_CHECK(cudaFree(device.spin));
 
     free(host.E);

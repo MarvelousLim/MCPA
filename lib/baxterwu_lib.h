@@ -3,10 +3,17 @@
 #include <stdlib.h>
 #include <time.h>
 
-#ifdef DLL_EXPORT
-    #define DECLSPEC __declspec(dllexport)
+// Platform-specific export/import macros
+#ifdef _WIN32
+    // Windows
+    #ifdef DLL_EXPORT
+        #define DECLSPEC __declspec(dllexport)
+    #else
+        #define DECLSPEC __declspec(dllimport)
+    #endif
 #else
-    #define DECLSPEC __declspec(dllimport)
+    // Linux/Unix/Mac - no declspec needed for executables
+    #define DECLSPEC  // Empty on Linux - we're building an executable, not a shared lib
 #endif
 
 #define CUDA_CHECK(ans) { gpu_assert((ans), __FILE__, __LINE__); }
@@ -15,8 +22,6 @@
     #include <cuda_runtime.h>
     #include <curand_kernel.h>
 #else
-// Forward declarations for MSVC
-    enum cudaError;
 #endif
 
 
@@ -71,17 +76,17 @@ struct Files {
     FILE* agg_stats_file;
     FILE* detailed_stats_file;
 };
-enum initializePopulationMode {random, by_sublattice};
-enum testMode { ALL, between_test, params_test, slf, lattice_setup, local_energy_test, resample_test, calc_replica_statistics_test };
+enum initializePopulationMode { random_pop, by_sublattice, strips };
+enum testMode { ALL, between_test, params_test, slf_test, lattice_setup, local_energy_test, resample_test, calc_replica_statistics_test };
 enum statisticsMode { aggregated = 0, detailed = 1, spin_samples = 2 }; // detailed includes aggregated and spin_samples includes both
 enum equlibrateMode { single_step, normal };
 
 
 // functions
-DECLSPEC void gpu_assert(cudaError code, const char* file, int line, bool abort = true);
+DECLSPEC void gpu_assert(int code, const char* file, int line, bool abort = true);
 DECLSPEC bool between(float x, float a, float b);
 DECLSPEC void print_spin_sample(int* s, int r, struct Params params);
-DECLSPEC void print_replica_row(int* e, struct Params params);
+DECLSPEC void print_replica_row(int* e, struct Params params, int limit);
 DECLSPEC struct neiborsIndexes SLF(int j, struct Params params);
 DECLSPEC void* setup_curand_states(struct Params params);
 DECLSPEC void initialize_population(void* curand_states, struct mainMemoryPointers device, struct Params params, initializePopulationMode mode, int s_a = 0, int s_b = 0, int s_c = 0);
@@ -89,13 +94,13 @@ DECLSPEC void initialize_update_arrays(struct mainMemoryPointers host, struct Pa
 DECLSPEC void copyHostToDevice(void* dst, void* src, size_t size);
 DECLSPEC void copyDeviceToHost(void* dst, void* src, size_t size);
 DECLSPEC void calc_device_energy(struct mainMemoryPointers device, struct Params params);
-DECLSPEC void equilibrate(void* curand_states, struct mainMemoryPointers device, struct Params params, int U, enum equlibrateMode equlibrate_mode);
+DECLSPEC void equilibrate(void* curand_states, struct mainMemoryPointers device, struct Params params, int U);
 DECLSPEC void calc_replica_statistics(struct mainMemoryPointers device, struct Params params, int U);
 DECLSPEC double prepare_resample_arrays(struct mainMemoryPointers host, struct Params params, int* U);
 DECLSPEC double calc_family_avg_sq_size(struct mainMemoryPointers host, struct Params params, int U);
 DECLSPEC void initialize_print(struct Files files);
 DECLSPEC void print_main_data(struct Files files, int U, double X, double rho_t);
-DECLSPEC void print_detailed_stats(struct mainMemoryPointers host, struct Params params, struct Files files, int U);
+DECLSPEC void print_detailed_stats(struct mainMemoryPointers host, struct Params params, struct Files files, int U, int limit);
 DECLSPEC void print_agg_stats(struct mainMemoryPointers host, struct Params params, struct Files files, int U);
 DECLSPEC void update_replicas(struct mainMemoryPointers device, struct Params params);
 
