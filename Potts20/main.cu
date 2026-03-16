@@ -4,7 +4,9 @@
 #include <cuda.h>
 #include <curand_kernel.h>
 
-#define NNEIBORS 4 // number of nearest neighbors, is 4 for 2d lattice
+#include <time.h>
+
+//#define NNEIBORS 4  // number of nearest neighbors, is 4 for 2d lattice
 
 /*-----------------------------------------------------------------------------------------------------------
 		Name agreement:
@@ -36,8 +38,14 @@
 
 -------------------------------------------------------------------------------------------------------------*/
 
-__host__ bool between(float x, float a, float b) {
-	return (((x >= a) && (x <= b)) || ((x <= a) && (x >= b)));
+#define cudaCheckError(ans) { gpuAssert((ans), __FILE__, __LINE__); }
+inline void gpuAssert(cudaError_t code, const char* file, int line, bool abort = true)
+{
+	if (code != cudaSuccess)
+	{
+		printf("GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
+		if (abort) exit(code);
+	}
 }
 
 struct neibors_indexes {
@@ -93,9 +101,11 @@ void CalcPrintAvgE(FILE* efile, int* E, int R, int U) {
 	double avg = 0.0;
 	for (int i = 0; i < R; i++) {
 		avg += E[i];
+		//fprintf(efile, "%d ", E[i]);
 	}
 	avg /= R;
 	fprintf(efile, "%d %f\n", U, avg);
+	fflush(efile);
 	printf("E: %f\n", avg);
 }
 
@@ -112,6 +122,7 @@ void CalculateRhoT(const int* replicaFamily, FILE* ptfile, int R, int U) {
 	}
 	sum /= R;
 	fprintf(ptfile, "%d %f\n", U, sum);
+	fflush(ptfile);
 	sum /= R;
 	printf("RhoT:\t%f\n", sum);
 	free(famHist);
@@ -129,7 +140,7 @@ __global__ void initializePopulation(curandStatePhilox4_32_10_t* state, char* s,
 	}
 }
 
-__global__ void equilibrate(curandStatePhilox4_32_10_t* state, char* s, int* E, int L, int N, int R, int q, int nSteps, int U) {
+__global__ void equilibrate(curandStatePhilox4_32_10_t* state, char* s, int* E, int L, int N, int R, int q, int nSteps, int U, bool heat) {
 	/*---------------------------------------------------------------------------------------------
 		Main Microcanonical Monte Carlo loop.  Performs update sweeps on each replica in the
 		population;
@@ -144,9 +155,10 @@ __global__ void equilibrate(curandStatePhilox4_32_10_t* state, char* s, int* E, 
 		struct neibors_indexes n_i = SLF(j, L, N);
 		struct neibors n = get_neibors_values(s, n_i, replica_shift);
 		int dE = DeltaE(currentSpin, suggestedSpin, n);
-		if (E[r] + dE < U) {
+		if ((!heat && (E[r] + dE < U)) || (heat && (E[r] + dE > U))) {
 			E[r] = E[r] + dE;
 			s[j + replica_shift] = suggestedSpin;
+			//atomicAdd(number_of_flips, 1);
 		}
 	}
 }
@@ -157,17 +169,17 @@ void Swap(int* A, int i, int j) {
 	A[j] = temp;
 }
 
-void quicksort(int* E, int* O, int left, int right, int cool) {
+void quicksort(int* E, int* O, int left, int right, int direction) {
 	int Min = (left + right) / 2;
 	int i = left;
 	int j = right;
-	double pivot = cool * E[O[Min]];
+	double pivot = direction * E[O[Min]];
 
 	while (left < j || i < right)
 	{
-		while (cool * E[O[i]] > pivot)
+		while (direction * E[O[i]] > pivot)
 			i++;
-		while (cool * E[O[j]] < pivot)
+		while (direction * E[O[j]] < pivot)
 			j--;
 
 		if (i <= j) {
@@ -177,21 +189,38 @@ void quicksort(int* E, int* O, int left, int right, int cool) {
 		}
 		else {
 			if (left < j)
-				quicksort(E, O, left, j, cool);
+				quicksort(E, O, left, j, direction);
 			if (i < right)
-				quicksort(E, O, i, right, cool);
+				quicksort(E, O, i, right, direction);
 			return;
 		}
 	}
 }
 
-void resample(int* E, int* O, int* update, int* replicaFamily, int R, int U, FILE* e2file, FILE* Xfile) {
+int resample(int* E, int* O, int* update, int* replicaFamily, int R, int* U, FILE* e2file, FILE* Xfile, bool heat) {
 	//std::sort(O, O + R, [&E](int a, int b) {return E[a] > E[b]; }); // greater sign for descending order
-	quicksort(E, O, 0, R - 1, 1); //Sorts O by energy
+	quicksort(E, O, 0, R - 1, 1 - 2 * heat); //Sorts O by energy
 
 	int nCull = 0;
-	fprintf(e2file, "%d %d\n", U, E[O[0]]);
-	while (E[O[nCull]] == U - 1) {
+	fprintf(e2file, "%d %d\n", *U, E[O[0]]);
+
+	//update energy seiling to the highest available energy
+	int U_old = *U;
+	int U_new;
+
+	for (int i = 0; i < R; i++) {
+		U_new = E[O[i]];
+		if ((!heat && U_new < U_old) || (heat && U_new > U_old)) {
+			*U = U_new;
+			break;
+		}
+	}
+
+	if (*U == U_old) {
+		return 1; // out of replicas
+	}
+
+	while ((!heat && E[O[nCull]] >= *U) || (heat && E[O[nCull]] <= *U)) {
 		nCull++;
 		if (nCull == R) {
 			break;
@@ -200,9 +229,10 @@ void resample(int* E, int* O, int* update, int* replicaFamily, int R, int U, FIL
 	// culling fraction
 	double X = nCull;
 	X /= R;
-	fprintf(Xfile, "%d %f\n", U - 1, X);
+	fprintf(Xfile, "%d %f\n", *U, X);
 	fflush(Xfile);
 	printf("Culling fraction:\t%f\n", X);
+	fflush(stdout);
 	for (int i = 0; i < R; i++)
 		update[i] = i;
 	if (nCull < R) {
@@ -213,6 +243,8 @@ void resample(int* E, int* O, int* update, int* replicaFamily, int R, int U, FIL
 			replicaFamily[O[i]] = replicaFamily[O[r]];
 		}
 	}
+
+	return 0;
 }
 
 __global__ void updateReplicas(char* s, int* E, int* update, int N) {
@@ -232,24 +264,71 @@ __global__ void updateReplicas(char* s, int* E, int* update, int N) {
 	}
 }
 
-__global__ void setup_kernel(curandStatePhilox4_32_10_t* state, int seed) {
+__global__ void setup_kernel(curandStatePhilox4_32_10_t* state, int seed)
+{
 	int id = threadIdx.x + blockIdx.x * blockDim.x;
 	/* Each thread gets same seed, a different sequence
 	   number, no offset */
 	curand_init(seed, id, 0, state + id);
 }
 
+__host__ bool between(float x, float a, float b) {
+	return (((x >= a) && (x <= b)) || ((x <= a) && (x >= b)));
+}
+
+
+void print_spin_samples(const char* prefix, int* hostE, char* hostSpin, int U, int q, int L, int R, int nSteps, int run_number) {
+	char s[100];
+	int N = L * L;
+	float x = (float)U / (L * L); // avg energy per spin
+	sprintf(s, "%s/spin_samples/2DPotts_q%d_N%d_R%d_nSteps%d_run%d_U%fs_12x5bit.bin", prefix, q, N, R, nSteps, run_number, x);
+	FILE* sfile = fopen(s, "wb");	// average energy
+	int r_counter = 0;
+
+	uint64_t buffer = 0;
+	int bits_in_buffer = 0;
+
+	for (int j = 0; j <= R; j++) {
+		if (hostE[j] == U) {
+			r_counter++;
+			int replica_shift = j * N;
+
+			for (size_t i = 0; i < N; i += 12) {
+				uint64_t packed = 0;
+				size_t remaining = N - i;
+				size_t block_size = (remaining < 12) ? remaining : 12;
+
+				for (size_t j = 0; j < block_size; j++) {
+					if (r_counter < 2 && i < 12)
+						printf("%d ", hostSpin[replica_shift + i + j]);
+					packed |= ((uint64_t)(hostSpin[replica_shift + i + j] & 0x1F)) << (j * 5);
+				}
+
+				if (r_counter < 2 && i < 12)
+					printf("\npacked: %d\n", packed);
+
+				fwrite(&packed, 8, 1, sfile);
+			}
+		}
+	}
+
+	fclose(sfile);
+}
+
 
 int main(int argc, char* argv[]) {
 
-	// Parameters:
+	printf("Start\n");
+
+	clock_t start, end;
+	double cpu_time_used;
+
+	start = clock();
 
 	int run_number = atoi(argv[1]);	// A number to label this run of the algorithm, used for data keeping purposes, also, a seed
 	int seed = run_number;
-	//int grid_width = atoi(argv[2]);	// should not be more than 256 due to MTGP32 limits
 	int L = atoi(argv[2]);	// Lattice size
 	int N = L * L;
-	//int R = grid_width * BLOCKS;	// Population size
 	int BLOCKS = atoi(argv[3]);
 	int THREADS = atoi(argv[4]);
 	int nSteps = atoi(argv[5]);
@@ -257,28 +336,32 @@ int main(int argc, char* argv[]) {
 
 	int q = atoi(argv[6]);	// q parameter for potts model, each spin variable can take on values 0 - q-1
 
-	printf("running 2DPotts_q%d_N%d_R%d_nSteps%d_run%de.txt\n", q, N, R, nSteps, run_number);
-	// initializing files to write in
+	bool heat = atoi(argv[7]); // 0 if cooling (default) and 1 if heating
+
+	const char* heating = heat ? "Heating" : "";
+
+	printf("n_s (number of flips): %f\n", N * nSteps);
+	printf("running 2DPotts%s_q%d_N%d_R%d_nSteps%d_run%de.txt\n", heating, q, N, R, nSteps, run_number);
+
 	char s[100];
-	sprintf(s, "datasets//2DPotts//2DPotts_q%d_N%d_R%d_nSteps%d_run%de.txt", q, N, R, nSteps, run_number);
+	const char* prefix = "C:/Users/MarvelousNote3/Yandex.Disk/ASAV/Analytics/datasets";
+	sprintf(s, "%s/2DPotts/2DPotts%s_q%d_N%d_R%d_nSteps%d_run%de.txt", prefix, heating, q, N, R, nSteps, run_number);
 	FILE* efile = fopen(s, "w");	// average energy
-	sprintf(s, "datasets//2DPotts//2DPotts_q%d_N%d_R%d_nSteps%d_run%de2.txt", q, N, R, nSteps, run_number);
+	sprintf(s, "%s/2DPotts/2DPotts%s_q%d_N%d_R%d_nSteps%d_run%de2.txt", prefix, heating, q, N, R, nSteps, run_number);
 	FILE* e2file = fopen(s, "w");	// surface (culled) energy
-	sprintf(s, "datasets//2DPotts//2DPotts_q%d_N%d_R%d_nSteps%d_run%dX.txt", q, N, R, nSteps, run_number);
+	sprintf(s, "%s/2DPotts/2DPotts%s_q%d_N%d_R%d_nSteps%d_run%dX.txt", prefix, heating, q, N, R, nSteps, run_number);
 	FILE* Xfile = fopen(s, "w");	// culling fraction
-	sprintf(s, "datasets//2DPotts//2DPotts_q%d_N%d_R%d_nSteps%d_run%dpt.txt", q, N, R, nSteps, run_number);
+	sprintf(s, "%s/2DPotts/2DPotts%s_q%d_N%d_R%d_nSteps%d_run%dpt.txt", prefix, heating, q, N, R, nSteps, run_number);
 	FILE* ptfile = fopen(s, "w");	// rho t
-	sprintf(s, "datasets//2DPotts//2DPotts_q%d_N%d_R%d_nSteps%d_run%dn.txt", q, N, R, nSteps, run_number);
-	FILE* nfile = fopen(s, "w");	// number of sweeps
-	sprintf(s, "datasets//2DPotts//2DPotts_q%d_N%d_R%d_nSteps%d_run%dch.txt", q, N, R, nSteps, run_number);
-	FILE* chfile = fopen(s, "w");	// cluster size histogram
-
-
+	if (Xfile == NULL) {
+		printf("Ошибка при открытии файла!\n");
+		return 1;
+	}
+	printf("Starting host memory allocation\n");
 	size_t fullLatticeByteSize = R * N * sizeof(char);
 
-	// Allocate space on host 
-	int* hostE = (int*)malloc(R * sizeof(int));
 	char* hostSpin = (char*)malloc(fullLatticeByteSize);
+	int* hostE = (int*)malloc(R * sizeof(int));
 	int* hostUpdate = (int*)malloc(R * sizeof(int));
 	int* replicaFamily = (int*)malloc(R * sizeof(int));
 	int* energyOrder = (int*)malloc(R * sizeof(int));
@@ -287,72 +370,80 @@ int main(int argc, char* argv[]) {
 		replicaFamily[i] = i;
 	}
 
-	// Allocate memory on device
+	printf("Starting device memory allocation 0\n");
 	char* deviceSpin; // s, d_s
 	int* deviceE;
 	int* deviceUpdate;
-	cudaMalloc((void**)&deviceSpin, fullLatticeByteSize);
-	cudaMalloc((void**)&deviceE, R * sizeof(int));
-	cudaMalloc((void**)&deviceUpdate, R * sizeof(int));
+
+	cudaCheckError(cudaMalloc((void**)&deviceSpin, fullLatticeByteSize));
+	cudaCheckError(cudaMalloc((void**)&deviceE, R * sizeof(int)));
+	cudaCheckError(cudaMalloc((void**)&deviceUpdate, R * sizeof(int)));
+
 
 	// Init Philox
+	printf("Starting Philox memory allocation\n");
 	curandStatePhilox4_32_10_t* devStates;
-	cudaMalloc((void**)&devStates, R * sizeof(curandStatePhilox4_32_10_t));
+	cudaCheckError(cudaMalloc((void**)&devStates, R * sizeof(curandStatePhilox4_32_10_t)));
 	setup_kernel << < BLOCKS, THREADS >> > (devStates, seed);
+	cudaCheckError(cudaDeviceSynchronize());
+	cudaCheckError(cudaPeekAtLastError());
 
 	// Init std random generator for little host part
 	srand(seed);
 
-	// Actually working part
+	printf("Initialization\n");
 	initializePopulation << < BLOCKS, THREADS >> > (devStates, deviceSpin, N, q);
-	//cudaMemset(deviceE, 0, R * sizeof(int));
+	cudaCheckError(cudaDeviceSynchronize());
+	cudaCheckError(cudaPeekAtLastError());
+
 	deviceEnergy << < BLOCKS, THREADS >> > (deviceSpin, deviceE, L, N);
+	cudaCheckError(cudaDeviceSynchronize());
+	cudaCheckError(cudaPeekAtLastError());
 
-	int U = 0;	// U is energy ceiling
+	printf("Limits assumtions\n");
 
-	while (U >= -2 * N) {
-		fprintf(nfile, "%d %d\n", U, nSteps);
-		printf("U:\t%d out of %d; nSteps: %d;\n", U, -2 * N, nSteps);
-		// Perform monte carlo sweeps on gpu
-		equilibrate << < BLOCKS, THREADS >> > (devStates, deviceSpin, deviceE, L, N, R, q, nSteps, U);
+	int upper_energy = 0;
+	int lower_energy = -2 * N;
+	int U = (heat ? lower_energy : upper_energy);	// U is energy ceiling
 
-		cudaMemcpy(hostE, deviceE, R * sizeof(int), cudaMemcpyDeviceToHost);
-		// record average energy and rho t
+	while ((U >= lower_energy && !heat) || (U <= upper_energy && heat)) {
+		printf("U: %d out of %d; nSteps: %d;\n", U, -3 * N / 2, nSteps);
+
+		equilibrate <<< BLOCKS, THREADS >>> (devStates, deviceSpin, deviceE, L, N, R, q, nSteps, U, heat);
+		cudaCheckError(cudaDeviceSynchronize());
+		cudaCheckError(cudaPeekAtLastError());
+
+		cudaCheckError(cudaMemcpy(hostE, deviceE, R * sizeof(int), cudaMemcpyDeviceToHost));
+
 		CalcPrintAvgE(efile, hostE, R, U);
 		CalculateRhoT(replicaFamily, ptfile, R, U);
-		// perform resampling step on cpu
-		resample(hostE, energyOrder, hostUpdate, replicaFamily, R, U, e2file, Xfile);
-		U--;
+
+		int error = resample(hostE, energyOrder, hostUpdate, replicaFamily, R, &U, e2file, Xfile, heat);
+		if (error)
+		{
+			printf("Process ended with zero replicas\n");
+			break;
+		}
 
 		// print hostSpin into a file
-		float x = 1.0 * U / (L * L); // avg energy per spin
+		float x = (float)U / (L * L); // avg energy per spin
 
-		if (between(x, -2, -0.5) && (q == 20)) {
-			if (between(x, -1.82, -1.75) || between(x, -0.8, -0.62) || between(x, -1.3, -1.1)) {
-				cudaMemcpy(hostSpin, deviceSpin, fullLatticeByteSize, cudaMemcpyDeviceToHost);
-				sprintf(s, "datasets//spin_samples//2DPotts_q%d_N%d_R%d_nSteps%d_run%d_U%fs.txt", q, N, R, nSteps, run_number, x);
-				FILE* sfile = fopen(s, "w");	// average energy
-				int r_counter = 0;
-				for (int i = 0; i <= R; i++) {
-					if (hostE[i] == U) {
-						r_counter++;
-						int replica_shift = i * N;
-						for (int k = 0; k < N; k++) {
-							fprintf(sfile, "%d ", (int)hostSpin[replica_shift + k]);
-						}
-					}
-					// if (r_counter >= 8192)
-					// 	break;
-				}
+		if (between(x, -1.82, -1.75) || between(x, -0.8, -0.62) || between(x, -1.3, -1.1)) {
+			cudaCheckError(cudaMemcpy(hostSpin, deviceSpin, fullLatticeByteSize, cudaMemcpyDeviceToHost));
+			cudaCheckError(cudaDeviceSynchronize());
+			cudaCheckError(cudaPeekAtLastError());
 
-
-				fclose(sfile);
-			}
+			print_spin_samples(prefix, hostE, hostSpin, U, q, L, R, nSteps, run_number);
+			//break;
 		}
+
 		// copy list of replicas to update back to gpu
-		cudaMemcpy(deviceUpdate, hostUpdate, R * sizeof(int), cudaMemcpyHostToDevice);
+		cudaCheckError(cudaMemcpy(deviceUpdate, hostUpdate, R * sizeof(int), cudaMemcpyHostToDevice));
 		updateReplicas << < BLOCKS, THREADS >> > (deviceSpin, deviceE, deviceUpdate, N);
+		cudaCheckError(cudaDeviceSynchronize());
+		cudaCheckError(cudaPeekAtLastError());
 	}
+
 
 	// Free memory and close files
 	cudaFree(devStates);
@@ -361,18 +452,24 @@ int main(int argc, char* argv[]) {
 	cudaFree(deviceUpdate);
 
 	free(hostE);
-	free(hostSpin);
 	free(hostUpdate);
 	free(replicaFamily);
 	free(energyOrder);
+
 
 	fclose(efile);
 	fclose(e2file);
 	fclose(Xfile);
 	fclose(ptfile);
-	fclose(nfile);
-	fclose(chfile);
 
-	// End
+	end = clock();
+	cpu_time_used = ((double)(end - start)) / CLOCKS_PER_SEC;
+
+	sprintf(s, "datasets//%s/2DPotts%s_q%d_N%d_R%d_nSteps%d_run%dtime.txt", prefix, heating, q, N, R, nSteps, run_number);
+	FILE* timefile = fopen(s, "w");
+
+	fprintf(timefile, "%f seconds", cpu_time_used);
+	fclose(timefile);
+
 	return 0;
 }
