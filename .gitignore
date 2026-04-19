@@ -351,3 +351,8 @@ healthchecksdb
 /Potts20Simulation/marina_datasets/L12_honey.csv
 /Potts20Simulation/1DIsingTMES.ipynb
 /Potts20Simulation/.ipynb_checkpoints/1DIsingTMES-checkpoint.ipynb
+/.agents
+/main/main_test.exe
+/main/main_test.exp
+/main/main_test.lib
+/opencode.json.txt
