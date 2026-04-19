@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "baxterwu_lib.h"
 #include <cuda_runtime.h>
@@ -7,11 +7,30 @@
 
 #define CUDA_CHECK(ans) { gpu_assert((ans), __FILE__, __LINE__); }
 
+#define OPEN_FILE_CHECK(fp, filename) do { \
+    (fp) = fopen((filename), "w"); \
+    if ((fp) == NULL) { \
+        fprintf(stderr, "ERROR: Could not open file: %s\n", (filename)); \
+    } else { \
+        printf("SUCCESS: Opened %s\n", (filename)); \
+    } \
+} while(0)
+
+#define FREE_HOST_DEVICE(host_ptr, dev_ptr) do { \
+    free(host_ptr); \
+    CUDA_CHECK(cudaFree(dev_ptr)); \
+} while(0)
+
 
 int main(int argc, char* argv[]) {
     clock_t global_start = clock();
     clock_t equilibrate_ticks = 0;
-    
+    clock_t prepare_resample_ticks = 0;
+    clock_t family_avg_ticks = 0;
+    clock_t replica_stats_ticks = 0;
+    clock_t update_replicas_ticks = 0;
+    clock_t copy_d2h_ticks = 0;
+    clock_t copy_h2d_ticks = 0;
 
     statisticsMode statistics_mode = detailed;
     equlibrateMode equlibrate_mode = normal;
@@ -25,9 +44,9 @@ int main(int argc, char* argv[]) {
     params.threads = atoi(argv[4]);
     params.R = params.blocks * params.threads;
     params.nSteps = atoi(argv[5]);
-    params.fullLatticeByteSize = params.R * params.N * sizeof(int);
-    params.singleIntRowByteSize = params.R * sizeof(int);
-    params.replicaStatisticsByteSize = params.R * sizeof(replicaStatistics);
+    params.fullLatticeByteSize = (size_t)params.R * (size_t)params.N * sizeof(int);
+    params.singleIntRowByteSize = (size_t)params.R * sizeof(int);
+    params.replicaStatisticsByteSize = (size_t)params.R * sizeof(replicaStatistics);
     params.heat = (bool)atoi(argv[6]);
 
     //long long int* host_kernel_timers, * device_kernel_timers;
@@ -42,42 +61,17 @@ int main(int argc, char* argv[]) {
     const char* prefix = "2DBaxterWu";
     const char* heating = params.heat ? "Heating" : "";
 
-    // ... (lines 1-44 remain the same)
-
     struct Files files;
 
-    // --- Main Stats File ---
+    // Open output files
     sprintf(s, "C:/Users/marvelouslim/Yandex.Disk/ASAV/Analytics/datasets/%s/2DBaxterWu%s_N%d_R%d_nSteps%d_run%d_main.txt", prefix, heating, params.N, params.R, params.nSteps, params.seed);
-    printf("Attempting to open main stats file at: %s\n", s);
-    files.main_file = fopen(s, "w");
-    if (files.main_file == NULL) {
-        fprintf(stderr, "ERROR: Could not open main stats file: %s\n", s);
-    }
-    else {
-        printf("SUCCESS: Main stats file opened.\n");
-    }
+    OPEN_FILE_CHECK(files.main_file, s);
 
-    // --- Agg Stats File ---
     sprintf(s, "C:/Users/marvelouslim/Yandex.Disk/ASAV/Analytics/datasets/%s/2DBaxterWu%s_N%d_R%d_nSteps%d_run%d_agg_stats.txt", prefix, heating, params.N, params.R, params.nSteps, params.seed);
-    printf("Attempting to open agg stats file at: %s\n", s);
-    files.agg_stats_file = fopen(s, "w");
-    if (files.agg_stats_file == NULL) {
-        fprintf(stderr, "ERROR: Could not open agg stats file: %s\n", s);
-    }
-    else {
-        printf("SUCCESS: Agg stats file opened.\n");
-    }
+    OPEN_FILE_CHECK(files.agg_stats_file, s);
 
-    // --- Detailed Stats File ---
     sprintf(s, "C:/Users/marvelouslim/Yandex.Disk/ASAV/Analytics/datasets/%s/2DBaxterWu%s_N%d_R%d_nSteps%d_run%d_detailed_stats.txt", prefix, heating, params.N, params.R, params.nSteps, params.seed);
-    printf("Attempting to open detailed stats file at: %s\n", s);
-    files.detailed_stats_file = fopen(s, "w");
-    if (files.detailed_stats_file == NULL) {
-        fprintf(stderr, "ERROR: Could not open detailed stats file: %s\n", s);
-    }
-    else {
-        printf("SUCCESS: Detailed stats file opened.\n");
-    }
+    OPEN_FILE_CHECK(files.detailed_stats_file, s);
 
     mainMemoryPointers host, device;
     // Allocate space on host
@@ -121,17 +115,24 @@ int main(int argc, char* argv[]) {
     while ((U >= lower_energy && !params.heat) || (U <= upper_energy && params.heat)) {
         printf("U:\t%f between %d and %d; nSteps: %d;\n", 1.0 * U, upper_energy, lower_energy, params.nSteps);
 
-
-        clock_t equilibrate_time_start = clock();
-
+        // Equilibrate
+        clock_t t0 = clock();
         equilibrate(curand_states, device, params, U);
+        clock_t t1 = clock();
+        equilibrate_ticks += t1 - t0;
 
-        clock_t equilibrate_time_end = clock();
-        equilibrate_ticks += equilibrate_time_end - equilibrate_time_start;
-
+        // Copy energy to host
+        clock_t t2 = clock();
         copyDeviceToHost(host.E, device.E, params.singleIntRowByteSize);
+        clock_t t3 = clock();
+        copy_d2h_ticks += t3 - t2;
 
-        double X = prepare_resample_arrays(host, params, &U); //
+        // Prepare resample arrays
+        clock_t t4 = clock();
+        double X = prepare_resample_arrays(host, params, &U);
+        clock_t t5 = clock();
+        prepare_resample_ticks += t5 - t4;
+
         if (X == 1) {
             if (no_replicas_try_again_counter < 10) {
                 printf("try again number %d at U=%d\n", no_replicas_try_again_counter, U);
@@ -145,12 +146,25 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        // now U has been lowered to next values - we collect our statistics now, but stritly before updates on replicas
+        // Family average size
+        clock_t t6 = clock();
         double rho_t = calc_family_avg_sq_size(host, params, U);
+        clock_t t7 = clock();
+        family_avg_ticks += t7 - t6;
+
         print_main_data(files, U, X, rho_t);
 
+        // Replica statistics
+        clock_t t10 = clock();
         calc_replica_statistics(device, params, U);
+        clock_t t11 = clock();
+        replica_stats_ticks += t11 - t10;
+
+        // Copy statistics to host
+        clock_t t12 = clock();
         copyDeviceToHost(host.replica_statistics, device.replica_statistics, params.replicaStatisticsByteSize);
+        clock_t t13 = clock();
+        copy_d2h_ticks += t13 - t12;
 
         print_agg_stats(host, params, files, U);
         print_detailed_stats(host, params, files, U, 100);
@@ -162,9 +176,16 @@ int main(int argc, char* argv[]) {
         if (break_flg)
             break;
 
-        // here goes actuall resample
+        // here goes actual resample - copy update array and update replicas
+        clock_t t14 = clock();
         copyHostToDevice(device.update, host.update, params.singleIntRowByteSize);
+        clock_t t15 = clock();
+        copy_h2d_ticks += t15 - t14;
+
+        clock_t t16 = clock();
         update_replicas(device, params);
+        clock_t t17 = clock();
+        update_replicas_ticks += t17 - t16;
     }
 
 
@@ -173,43 +194,35 @@ int main(int argc, char* argv[]) {
     fclose(files.agg_stats_file);
     fclose(files.detailed_stats_file);
 
-
-    free(host.spin);
-    CUDA_CHECK(cudaFree(device.spin));
-
-    free(host.E);
-    CUDA_CHECK(cudaFree(device.E));
-
-    free(host.replica_statistics);
-    CUDA_CHECK(cudaFree(device.replica_statistics));
-
-    free(host.O);
-    CUDA_CHECK(cudaFree(device.O));
-
-    free(host.update);
-    CUDA_CHECK(cudaFree(device.update));
-
-    free(host.replica_family);
-    CUDA_CHECK(cudaFree(device.replica_family));
-
+    FREE_HOST_DEVICE(host.spin, device.spin);
+    FREE_HOST_DEVICE(host.E, device.E);
+    FREE_HOST_DEVICE(host.replica_statistics, device.replica_statistics);
+    FREE_HOST_DEVICE(host.O, device.O);
+    FREE_HOST_DEVICE(host.update, device.update);
+    FREE_HOST_DEVICE(host.replica_family, device.replica_family);
     CUDA_CHECK(cudaFree(curand_states));
 
 
     clock_t global_end = clock();
     double global_time_spend = (double)(global_end - global_start) / CLOCKS_PER_SEC;
     double equilibrate_time_spend = (double)equilibrate_ticks / CLOCKS_PER_SEC;
-    printf("spend %.2fs, among them %.2fs (%.2f%%) spend on equilibrate\n", global_time_spend, equilibrate_time_spend, 100.0 * equilibrate_time_spend / global_time_spend);
+    double prepare_resample_time_spend = (double)prepare_resample_ticks / CLOCKS_PER_SEC;
+    double family_avg_time_spend = (double)family_avg_ticks / CLOCKS_PER_SEC;
+    double replica_stats_time_spend = (double)replica_stats_ticks / CLOCKS_PER_SEC;
+    double update_replicas_time_spend = (double)update_replicas_ticks / CLOCKS_PER_SEC;
+    double copy_d2h_time_spend = (double)copy_d2h_ticks / CLOCKS_PER_SEC;
+    double copy_h2d_time_spend = (double)copy_h2d_ticks / CLOCKS_PER_SEC;
 
-    //copyDeviceToHost(host_kernel_timers, device_kernel_timers, params.R * sizeof(long long int));
-
-    //double kernel_time_spend = (double)host_kernel_timers[0] / (CLOCKS_PER_SEC * params.R);
-    //printf("among them %.2f s (%.2f)%% spend on equilibrate inside kernel\n", kernel_time_spend, 100.0 * kernel_time_spend / global_time_spend);
-    //
-    //double slf_time_spend = (double)host_kernel_timers[1] / (CLOCKS_PER_SEC * params.R);
-    //printf("among them %.2f s (%.2f)%% spend on slf inside kernel\n", slf_time_spend, 100.0 * slf_time_spend / global_time_spend);
-
-    //free(host_kernel_timers);
-    //CUDA_CHECK(cudaFree(device_kernel_timers));
+    printf("\n=== TIMING SUMMARY ===\n");
+    printf("Total time:        %.2fs\n", global_time_spend);
+    printf("Equilibrate:       %.2fs (%.1f%%)\n", equilibrate_time_spend, 100.0 * equilibrate_time_spend / global_time_spend);
+    printf("Prepare resample:  %.2fs (%.1f%%)\n", prepare_resample_time_spend, 100.0 * prepare_resample_time_spend / global_time_spend);
+    printf("Family avg:       %.2fs (%.1f%%)\n", family_avg_time_spend, 100.0 * family_avg_time_spend / global_time_spend);
+    printf("Replica stats:      %.2fs (%.1f%%)\n", replica_stats_time_spend, 100.0 * replica_stats_time_spend / global_time_spend);
+    printf("Update replicas:  %.2fs (%.1f%%)\n", update_replicas_time_spend, 100.0 * update_replicas_time_spend / global_time_spend);
+    printf("Copy D->H:        %.2fs (%.1f%%)\n", copy_d2h_time_spend, 100.0 * copy_d2h_time_spend / global_time_spend);
+    printf("Copy H->D:        %.2fs (%.1f%%)\n", copy_h2d_time_spend, 100.0 * copy_h2d_time_spend / global_time_spend);
+    printf("====================\n");
 
     return 0;
 }

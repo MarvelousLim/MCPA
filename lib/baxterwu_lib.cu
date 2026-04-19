@@ -1,4 +1,4 @@
-﻿#include "baxterwu_lib.h"
+#include "baxterwu_lib.h"
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <curand_kernel.h>
@@ -68,7 +68,7 @@ __device__ int suggest_spin(curandStatePhilox4_32_10_t* curand_states, int r) {
 
 __global__ void initialize_population_kernel(curandStatePhilox4_32_10_t* curand_states, struct mainMemoryPointers device, struct Params params, initializePopulationMode mode, int s_a, int s_b, int s_c) {
     int r = threadIdx.x + blockIdx.x * blockDim.x;
-    int replica_shift = r * params.N;
+    long long replica_shift = (long long)r * params.N;
 
     for (int k = 0; k < params.N; k++) {
         int arrayIndex = replica_shift + k;
@@ -172,8 +172,8 @@ __device__ __host__ int local_energy(int currentSpin, struct neiborsValues n) {
 
 __global__ void calc_device_energy_kernel(struct mainMemoryPointers device, struct Params params) {
     int r = threadIdx.x + blockIdx.x * blockDim.x;
-    int sum = 0;
-    int replica_shift = r * params.N;
+    long long sum = 0;
+    long long replica_shift = (long long)r * params.N;
 
     for (int j = 0; j < params.N; j++) {
         int currentSpin = device.spin[j + replica_shift];
@@ -184,7 +184,7 @@ __global__ void calc_device_energy_kernel(struct mainMemoryPointers device, stru
         sum += le;
     }
 
-    device.E[r] = sum / 3; // local energy calcs parkets with overlap 2
+    device.E[r] = (int)(sum / 3); // local energy calcs parkets with overlap 2
 }
 
 DECLSPEC void calc_device_energy(struct mainMemoryPointers device, struct Params params) {
@@ -208,7 +208,7 @@ __global__ void equilibrate_kernel(curandStatePhilox4_32_10_t* curand_states, st
     //int SLF_spend = 0;
 
     int r = threadIdx.x + blockIdx.x * blockDim.x;
-    int replica_shift = r * params.N;
+    long long replica_shift = (long long)r * params.N;
     device.replica_statistics[r].flip_count = 0;
 
     //for (int k = 0; k < 1; k++)
@@ -364,9 +364,9 @@ __global__ void update_replicas_kernel(struct mainMemoryPointers device, struct 
         replicas by the proper other replica
     -----------------------------------------------------------------------------------------------*/
     int r = threadIdx.x + blockIdx.x * blockDim.x;
-    int replica_shift = r * params.N;
+    long long replica_shift = (long long)r * params.N;
     int source_r = device.update[r];
-    int source_replica_shift = source_r * params.N;
+    long long source_replica_shift = (long long)source_r * params.N;
     if (source_r != r) {
         for (int j = 0; j < params.N; j++) {
             device.spin[j + replica_shift] = device.spin[j + source_replica_shift];
@@ -383,7 +383,7 @@ DECLSPEC void update_replicas(struct mainMemoryPointers device, struct Params pa
 
 __global__ void calc_replica_statistics_kernel(struct mainMemoryPointers device, struct Params params, int U) {
     int r = threadIdx.x + blockIdx.x * blockDim.x;
-    int replica_shift = r * params.N;
+    long long replica_shift = (long long)r * params.N;
 
     for (int sublattice_index = 0; sublattice_index < 3; sublattice_index++) {
         device.replica_statistics[r].magnetization[sublattice_index] = 0;
