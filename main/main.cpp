@@ -42,17 +42,42 @@ int main(int argc, char* argv[]) {
     const char* prefix = "2DBaxterWu";
     const char* heating = params.heat ? "Heating" : "";
 
-    struct Files files;
-    sprintf(s, "C:/Users/MarvelousNote3/Yandex.Disk/ASAV/Analytics/datasets/%s/2DBaxterWu%s_N%d_R%d_nSteps%d_run%d_main.txt", prefix, heating, params.N, params.R, params.nSteps, params.seed);
-    files.main_file = fopen(s, "w");
-    //printf(s);
-    sprintf(s, "C:/Users/MarvelousNote3/Yandex.Disk/ASAV/Analytics/datasets/%s/2DBaxterWu%s_N%d_R%d_nSteps%d_run%d_agg_stats.txt", prefix, heating, params.N, params.R, params.nSteps, params.seed);
-    files.agg_stats_file = fopen(s, "w");
-    //printf(s);
-    sprintf(s, "C:/Users/MarvelousNote3/Yandex.Disk/ASAV/Analytics/datasets/%s/2DBaxterWu%s_N%d_R%d_nSteps%d_run%d_detailed_stats.txt", prefix, heating, params.N, params.R, params.nSteps, params.seed);
-    files.detailed_stats_file = fopen(s, "w");
-    //printf(s);
+    // ... (lines 1-44 remain the same)
 
+    struct Files files;
+
+    // --- Main Stats File ---
+    sprintf(s, "C:/Users/marvelouslim/Yandex.Disk/ASAV/Analytics/datasets/%s/2DBaxterWu%s_N%d_R%d_nSteps%d_run%d_main.txt", prefix, heating, params.N, params.R, params.nSteps, params.seed);
+    printf("Attempting to open main stats file at: %s\n", s);
+    files.main_file = fopen(s, "w");
+    if (files.main_file == NULL) {
+        fprintf(stderr, "ERROR: Could not open main stats file: %s\n", s);
+    }
+    else {
+        printf("SUCCESS: Main stats file opened.\n");
+    }
+
+    // --- Agg Stats File ---
+    sprintf(s, "C:/Users/marvelouslim/Yandex.Disk/ASAV/Analytics/datasets/%s/2DBaxterWu%s_N%d_R%d_nSteps%d_run%d_agg_stats.txt", prefix, heating, params.N, params.R, params.nSteps, params.seed);
+    printf("Attempting to open agg stats file at: %s\n", s);
+    files.agg_stats_file = fopen(s, "w");
+    if (files.agg_stats_file == NULL) {
+        fprintf(stderr, "ERROR: Could not open agg stats file: %s\n", s);
+    }
+    else {
+        printf("SUCCESS: Agg stats file opened.\n");
+    }
+
+    // --- Detailed Stats File ---
+    sprintf(s, "C:/Users/marvelouslim/Yandex.Disk/ASAV/Analytics/datasets/%s/2DBaxterWu%s_N%d_R%d_nSteps%d_run%d_detailed_stats.txt", prefix, heating, params.N, params.R, params.nSteps, params.seed);
+    printf("Attempting to open detailed stats file at: %s\n", s);
+    files.detailed_stats_file = fopen(s, "w");
+    if (files.detailed_stats_file == NULL) {
+        fprintf(stderr, "ERROR: Could not open detailed stats file: %s\n", s);
+    }
+    else {
+        printf("SUCCESS: Detailed stats file opened.\n");
+    }
 
     mainMemoryPointers host, device;
     // Allocate space on host

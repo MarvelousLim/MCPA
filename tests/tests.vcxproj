@@ -103,12 +103,12 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions);_CRT_SECURE_NO_WARNINGS</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>C:\Users\MarvelousNote3\Yandex.Disk\ASAV\MCPA\lib;C:\Users\MarvelousNote3\Yandex.Disk\ASAV\MCPA\tests\x64;C:\Users\MarvelousNote3\Yandex.Disk\ASAV\MCPA\main\x64\Debug;C:\Users\MarvelousNote3\Yandex.Disk\ASAV\MCPA\lib\x64\Debug;C:\Users\MarvelousNote3\Yandex.Disk\ASAV\MCPA\x64\Debug;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\lib;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2\include;..\tests</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>C:\Users\MarvelousNote3\Yandex.Disk\ASAV\MCPA\tests\x64\Debug;C:\Users\MarvelousNote3\Yandex.Disk\ASAV\MCPA\lib\x64\Debug;$(OutDir);C:\Users\MarvelousNote3\Yandex.Disk\ASAV\MCPA\x64\Debug;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(OutDir);..\lib\$(Platform)\$(Configuration);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>lib.lib;cudart.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
@@ -120,17 +120,29 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions);_CRT_SECURE_NO_WARNINGS</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>C:\Users\MarvelousNote3\Yandex.Disk\ASAV\MCPA\lib;C:\Users\MarvelousNote3\Yandex.Disk\ASAV\MCPA\tests\x64;C:\Users\MarvelousNote3\Yandex.Disk\ASAV\MCPA\main\x64\Debug;C:\Users\MarvelousNote3\Yandex.Disk\ASAV\MCPA\lib\x64\Debug;C:\Users\MarvelousNote3\Yandex.Disk\ASAV\MCPA\x64\Debug;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\lib;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2\include;..\tests</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>C:\Users\MarvelousNote3\Yandex.Disk\ASAV\MCPA\tests\x64\Debug;C:\Users\MarvelousNote3\Yandex.Disk\ASAV\MCPA\lib\x64\Debug;$(OutDir);C:\Users\MarvelousNote3\Yandex.Disk\ASAV\MCPA\x64\Debug;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(OutDir);..\lib\$(Platform)\$(Configuration);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>lib.lib;cudart.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="test_cuda_setup.cpp" />
+    <ClCompile Include="test_kernel_energy.cpp" />
+    <ClCompile Include="test_slf.cpp" />
     <ClCompile Include="tests.cpp" />
+    <ClCompile Include="test_pure_logic.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="test_cuda_setup.h" />
+    <ClInclude Include="test_kernel_energy.h" />
+    <ClInclude Include="test_slf.h" />
+    <ClInclude Include="test_common.h" />
+    <ClInclude Include="test_pure_logic.h" />
+    <ClInclude Include="test_globals.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

@@ -1,9 +1,0 @@
-{
-    "compute_capability": "8.9",
-    "cuda_version": "13.1",
-    "global_load_cache_mode": "",
-    "reg_per_thread": 20,
-    "smem_per_block": 0,
-    "smem_size_config": 32768,
-    "threads_per_block": 1
-}

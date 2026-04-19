@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
@@ -26,6 +26,8 @@
 
 
 // data types
+// Function declarations (Added)
+// Returns the local energy (negative sum of interactions)
 struct neiborsIndexes {
     int left;
     int right;
@@ -83,10 +85,14 @@ enum equlibrateMode { single_step, normal };
 
 
 // functions
+DECLSPEC void swap(int* A, int i, int j);
+DECLSPEC void quicksort(struct mainMemoryPointers host, int left, int right, int direction);
+DECLSPEC int local_energy(int currentSpin, struct neiborsValues n);
 DECLSPEC void gpu_assert(int code, const char* file, int line, bool abort = true);
 DECLSPEC bool between(float x, float a, float b);
 DECLSPEC void print_spin_sample(int* s, int r, struct Params params);
 DECLSPEC void print_replica_row(int* e, struct Params params, int limit);
+// The function is pure math logic, so we remove __device__ to allow host testing.
 DECLSPEC struct neiborsIndexes SLF(int j, struct Params params);
 DECLSPEC void* setup_curand_states(struct Params params);
 DECLSPEC void initialize_population(void* curand_states, struct mainMemoryPointers device, struct Params params, initializePopulationMode mode, int s_a = 0, int s_b = 0, int s_c = 0);

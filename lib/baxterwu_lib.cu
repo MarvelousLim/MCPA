@@ -1,4 +1,4 @@
-#include "baxterwu_lib.h"
+﻿#include "baxterwu_lib.h"
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <curand_kernel.h>
@@ -141,7 +141,7 @@ DECLSPEC void copyDeviceToHost(void* dst, void* src, size_t size) {
     CUDA_CHECK(cudaDeviceSynchronize());
 }
 
-__device__ struct neiborsValues SVLF(struct mainMemoryPointers device, struct neiborsIndexes n_i, int replica_shift) {
+__device__ __host__ struct neiborsValues SVLF(struct mainMemoryPointers device, struct neiborsIndexes n_i, int replica_shift) {
     struct neiborsValues result;
     result.right = device.spin[n_i.right + replica_shift];
     result.down = device.spin[n_i.down + replica_shift];
@@ -153,7 +153,7 @@ __device__ struct neiborsValues SVLF(struct mainMemoryPointers device, struct ne
     return result;
 }
 
-__device__ int local_energy(int currentSpin, struct neiborsValues n) {
+__device__ __host__ int local_energy(int currentSpin, struct neiborsValues n) {
     // Computes energy of spin i with its neigborts triangles (6)
     // it summirezes each triangle 3 times
     int result = 0;
@@ -250,13 +250,13 @@ DECLSPEC void equilibrate(void* curand_states, struct mainMemoryPointers device,
 }
 
 
-void swap(int* A, int i, int j) {
+DECLSPEC void swap(int* A, int i, int j) {
     int temp = A[i];
     A[i] = A[j];
     A[j] = temp;
 }
 
-void quicksort(struct mainMemoryPointers host, int left, int right, int direction) {
+DECLSPEC void quicksort(struct mainMemoryPointers host, int left, int right, int direction) {
     int Min = (left + right) / 2;
     int i = left;
     int j = right;

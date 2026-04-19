@@ -1,273 +1,143 @@
-﻿#pragma once
-
-
 #include "baxterwu_lib.h"
-//#include <cuda.h>
+#include "test_common.h"
+#include "test_pure_logic.h"
+#include "test_slf.h"
+#include "test_cuda_setup.h"
+#include "test_kernel_energy.h"
+
 #include <cuda_runtime.h>
-//#include <curand_kernel.h>
 #include <iostream>
-
-#define CUDA_CHECK(ans) { gpu_assert((ans), __FILE__, __LINE__); }
-
-
-int main()
-{
-    testMode test_mode = local_energy_test;
-    statisticsMode statistics_mode = detailed;
-    equlibrateMode equlibrate_mode = single_step;
-
-    if (test_mode == between_test){
-        std::cout << "between section" << std::endl;
-        std::cout << "0 <= 1 <= 2: " << between(1, 0, 2) << std::endl;
-        std::cout << "2 >= 1 >= 0: " << between(1, 2, 0) << std::endl;
-        std::cout << "0 <= -1 <= 2: " << between(-1, 0, 2) << std::endl;
-    }
-
-    Params params;
-    params.L = 18;
-    params.N = params.L * params.L;
-    params.seed = 1;
-    params.blocks = 1;
-    params.threads = 1;
-    params.R = params.blocks * params.threads;
-    params.nSteps = 1;
-    params.fullLatticeByteSize = params.R * params.N * sizeof(int);
-    params.singleIntRowByteSize = params.R * sizeof(int);
-    params.replicaStatisticsByteSize = params.R * sizeof(replicaStatistics);
-    params.heat = false;
-
-    //int U;
-
-	char s[150];
-	const char* prefix = "test";
-    const char* heating = params.heat ? "Heating" : "";
-
-    struct Files files;
-	sprintf(s, "C:/Users/MarvelousNote3/Yandex.Disk/ASAV/Analytics/datasets/%s/2DBaxterWu%s_N%d_R%d_nSteps%d_run%d_main.txt", prefix, heating, params.N, params.R, params.nSteps, params.seed);
-	files.main_file = fopen(s, "w");
-    printf(s);
-    sprintf(s, "C:/Users/MarvelousNote3/Yandex.Disk/ASAV/Analytics/datasets/%s/2DBaxterWu%s_N%d_R%d_nSteps%d_run%d_agg_stats.txt", prefix, heating, params.N, params.R, params.nSteps, params.seed);
-    files.agg_stats_file = fopen(s, "w");
-    printf(s);
-    sprintf(s, "C:/Users/MarvelousNote3/Yandex.Disk/ASAV/Analytics/datasets/%s/2DBaxterWu%s_N%d_R%d_nSteps%d_run%d_detailed_stats.txt", prefix, heating, params.N, params.R, params.nSteps, params.seed);
-    files.detailed_stats_file = fopen(s, "w");
-    printf(s);
-
-    
-    if (test_mode == params_test){
-        std::cout << "params: "
-            << params.L << ' '
-            << params.N << ' '
-            << params.R << ' '
-            << params.seed << ' '
-            << params.blocks << ' '
-            << params.threads << ' '
-            << params.nSteps << ' '
-            << params.fullLatticeByteSize << ' '
-            << params.singleIntRowByteSize << ' '
-            << std::endl;
-    }
-
-    struct neiborsIndexes neibors_indexes_test = SLF(0, params);
-
-    if (test_mode == ALL or test_mode == slf_test){
-        std::cout << "neibors_indexes section" << std::endl;
-        std::cout << "neibors_indexes_test: "
-            << neibors_indexes_test.right << ' '
-            << neibors_indexes_test.left << ' '
-            << neibors_indexes_test.up << ' '
-            << neibors_indexes_test.down << ' '
-            << neibors_indexes_test.diag_right << ' '
-            << neibors_indexes_test.diag_left << std::endl;
-    }
-
-
-    mainMemoryPointers host, device;
-	// Allocate space on host
-	host.spin = (int*)malloc(params.fullLatticeByteSize);
-    CUDA_CHECK(cudaMalloc((void**)&device.spin, params.fullLatticeByteSize));
-
-    host.E = (int*)malloc(params.singleIntRowByteSize);
-    CUDA_CHECK(cudaMalloc((void**)&device.E, params.singleIntRowByteSize));
-
-    host.replica_statistics = (replicaStatistics*)malloc(params.replicaStatisticsByteSize);
-    CUDA_CHECK(cudaMalloc((void**)&device.replica_statistics, params.replicaStatisticsByteSize));
-
-    host.O = (int*)malloc(params.singleIntRowByteSize);
-    CUDA_CHECK(cudaMalloc((void**)&device.O, params.singleIntRowByteSize));
-
-    host.update = (int*)malloc(params.singleIntRowByteSize);
-    CUDA_CHECK(cudaMalloc((void**)&device.update, params.singleIntRowByteSize));
-
-    host.replica_family = (int*)malloc(params.singleIntRowByteSize);
-    CUDA_CHECK(cudaMalloc((void**)&device.replica_family, params.singleIntRowByteSize));
-
-    // Init Philox
-	void* curand_states = setup_curand_states(params);
-
-    // setup lattics test
-    if (test_mode == ALL or test_mode == lattice_setup) {
-        {
-            std::cout << "deviceSpin random test" << std::endl;
-
-            initialize_population(curand_states, device, params, random, 0, -1, 1);
-
-            copyDeviceToHost(host.spin, device.spin, params.fullLatticeByteSize);
-
-            print_spin_sample(host.spin, 0, params);
-
-            calc_device_energy(device, params);
-
-            copyDeviceToHost(host.E, device.E, params.singleIntRowByteSize);
-
-            print_replica_row(host.E, params, 10);
-
-        }
-
-
-        {
-            std::cout << "deviceSpin 0 0 0 test" << std::endl;
-
-            initialize_population(curand_states, device, params, by_sublattice, 0, 0, 0);
-
-            copyDeviceToHost(host.spin, device.spin, params.fullLatticeByteSize);
-
-            print_spin_sample(host.spin, 0, params);
-
-            calc_device_energy(device, params);
-
-            copyDeviceToHost(host.E, device.E, params.singleIntRowByteSize);
-
-            print_replica_row(host.E, params, 10);
-
-        }
-    }
-
-
-    //SLF tests
-    if (test_mode == ALL or test_mode == slf_test) {
-        {
-            std::cout << "SLF test: middle" << std::endl;
-
-            initialize_population(curand_states, device, params, by_sublattice, 0, 0, 0);
-
-            copyDeviceToHost(host.spin, device.spin, params.fullLatticeByteSize);
-
-            neibors_indexes_test = SLF(0, params);
-
-            host.spin[neibors_indexes_test.diag_left] = 1;
-            host.spin[neibors_indexes_test.up] = 2;
-            host.spin[neibors_indexes_test.right] = 3;
-            host.spin[neibors_indexes_test.diag_right] = 4;
-            host.spin[neibors_indexes_test.down] = 5;
-            host.spin[neibors_indexes_test.left] = 6;
-
-
-            print_spin_sample(host.spin, 0, params);
-
-        }
-    }
-
-
-    // Local Energy (changes) tests
-    if (test_mode == ALL or test_mode == local_energy_test) {
-        std::cout << "local energy test" << std::endl;
-        initialize_population(curand_states, device, params, strips, 1, -1, -1);
-        calc_device_energy(device, params);
-
-        copyDeviceToHost(host.spin, device.spin, params.fullLatticeByteSize);
-        copyDeviceToHost(host.E, device.E, params.singleIntRowByteSize);
-
-        print_spin_sample(host.spin, 0, params);
-        print_replica_row(host.E, params, 10);
-
-    }
-
-
-    if (test_mode == ALL or test_mode == resample_test) {
-        std::cout << "replica statistics test" << std::endl;
-        initialize_population(curand_states, device, params, by_sublattice, 1, 1, 1);
-        calc_device_energy(device, params);
-        copyDeviceToHost(host.E, device.E, params.singleIntRowByteSize);
-        print_replica_row(host.E, params, 10);
-
-        for (int i = 0; i < 100; i++) {
-
-            equilibrate(curand_states, device, params, 1000); // single step
-            copyDeviceToHost(host.spin, device.spin, params.fullLatticeByteSize);
-            copyDeviceToHost(host.E, device.E, params.singleIntRowByteSize);
-
-            print_spin_sample(host.spin, 0, params);
-
-            int X = host.E[0];
-            print_replica_row(host.E, params, 10);
-
-            calc_device_energy(device, params);
-            copyDeviceToHost(host.E, device.E, params.singleIntRowByteSize);
-            print_replica_row(host.E, params, 10);
-
-            if (X != host.E[0]) {
-                printf("Gotcha!\n");
-                break;
-            }
-                
-
-            //prepare_resample_arrays(host, params, files, &U);
-        }
-
-    }
-
-
-    if (test_mode == ALL or test_mode == calc_replica_statistics_test) {
-        std::cout << "replica statistics test" << std::endl;
-        initialize_population(curand_states, device, params, by_sublattice, 1, -1, 0);
-        calc_device_energy(device, params);
-
-
-        for (int i = 0; i < 10; i++) {
-            copyDeviceToHost(host.spin, device.spin, params.fullLatticeByteSize);
-            copyDeviceToHost(host.E, device.E, params.singleIntRowByteSize);
-
-            print_spin_sample(host.spin, 0, params);
-            print_replica_row(host.E, params, 10);
-
-            equilibrate(curand_states, device, params, 1000); // single step
-        
-            calc_replica_statistics(device, params, 0);
-            copyDeviceToHost(host.replica_statistics, device.replica_statistics, params.replicaStatisticsByteSize);
-
-            print_detailed_stats(host, params, files, 0, 1000);
-            print_agg_stats(host, params, files, 0);
-
-        }
-
-    }
-
-    
-    fclose(files.main_file);
-    fclose(files.agg_stats_file);
-    fclose(files.detailed_stats_file);
-
-
-    free(host.spin);
-    CUDA_CHECK(cudaFree(device.spin));
-
-    free(host.E);
-    CUDA_CHECK(cudaFree(device.E));
-
-    free(host.replica_statistics);
-    CUDA_CHECK(cudaFree(device.replica_statistics));
-
-    free(host.O);
-    CUDA_CHECK(cudaFree(device.O));
-
-    free(host.update);
-    CUDA_CHECK(cudaFree(device.update));
-
-    free(host.replica_family);
-    CUDA_CHECK(cudaFree(device.replica_family));
-
-    CUDA_CHECK(cudaFree(curand_states));
-
-    return 0;
+#include <vector>
+#include <cstring>
+#include <algorithm>
+#include <windows.h>   // For enabling ANSI escape sequences
+
+// ====================================================================================
+// 1. COLOR SUPPORT & GLOBAL TEST STATE
+// ====================================================================================
+
+// Enable ANSI escape sequences on Windows 10+ console
+void enable_ansi_support() {
+    HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    DWORD dwMode = 0;
+    GetConsoleMode(hOut, &dwMode);
+    dwMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+    SetConsoleMode(hOut, dwMode);
+}
+
+// ANSI color codes
+#define COLOR_RESET   "\033[0m"
+#define COLOR_GREEN   "\033[32m"
+#define COLOR_RED     "\033[31m"
+#define COLOR_YELLOW  "\033[33m"
+#define COLOR_CYAN    "\033[36m"
+#define COLOR_BOLD    "\033[1m"
+
+// Global test counters (shared with other test files via extern)
+int g_test_passing = 0;
+int g_test_failed = 0;
+
+// Global mock parameters for controlled testing (shared with other test files)
+struct Params mock_params;
+
+// Function to reset the global mock parameters (shared with other test files)
+void setup_mock_params(int L, int R, int N, bool heat) {
+    mock_params.L = L;
+    mock_params.R = R;
+    mock_params.N = N;
+    mock_params.heat = heat;
+    mock_params.blocks = (R + L - 1) / L;  // Ceiling division to ensure at least 1 block
+    if (mock_params.blocks < 1) mock_params.blocks = 1;
+    mock_params.threads = L;
+    mock_params.singleIntRowByteSize = R * sizeof(int);
+    mock_params.fullLatticeByteSize = N * sizeof(int);
+    mock_params.replicaStatisticsByteSize = R * sizeof(replicaStatistics);
+}
+
+// Custom assertion macro with colored output
+#define ASSERT_TRUE(condition, message) \
+    if (!(condition)) { \
+        std::cout << COLOR_RED "[FAIL] " COLOR_RESET << __func__ << ": " << message << "\n"; \
+        g_test_failed++; \
+    } else { \
+        std::cout << COLOR_GREEN "[PASS] " COLOR_RESET << __func__ << ": " << message << "\n"; \
+        g_test_passing++; \
+    } \
+    std::cout.flush();
+
+// Macro to wrap and execute a test function with colored header
+#define RUN_TEST(test_func) \
+    do { \
+        std::cout << COLOR_CYAN COLOR_BOLD "\n====================================================\n"; \
+        std::cout << "STARTING TEST: " << #test_func << COLOR_RESET "\n"; \
+        test_func(); \
+    } while (0)
+
+// ====================================================================================
+// 2. TEST STUBS: RESAMPLE LOGIC (to be implemented later)
+// ====================================================================================
+
+void test_resample() {
+    std::cout << COLOR_YELLOW "\n--- Resample Tests (stub) ---" COLOR_RESET "\n";
+    // Placeholder: will implement in Phase 4
+}
+
+void test_integration_simulation() {
+    std::cout << COLOR_YELLOW "\n--- Integration Simulation Test (stub) ---" COLOR_RESET "\n";
+    // Placeholder: will implement in Phase 5
+}
+
+// ====================================================================================
+// 3. MAIN TEST RUNNER
+// ====================================================================================
+
+int main() {
+    enable_ansi_support();  // Ensure colored output works
+
+    std::cout << COLOR_CYAN COLOR_BOLD;
+    std::cout << "===========================================================\n";
+    std::cout << "       STARTING BAXTERWU LIBRARY TEST SUITE\n";
+    std::cout << "===========================================================" COLOR_RESET "\n";
+
+    // Phase 1: Pure CPU Logic Tests
+    RUN_TEST(test_between);
+    RUN_TEST(test_local_energy);
+    RUN_TEST(test_swap);
+    RUN_TEST(test_quicksort);
+    RUN_TEST(test_slf_lattice_find_vs_precomputed);
+
+    // Phase 2: CUDA Setup Tests
+    RUN_TEST(test_setup_curand_states);
+    RUN_TEST(test_initialize_population_random);
+    RUN_TEST(test_initialize_population_sublattice);
+    RUN_TEST(test_initialize_population_strips);
+    RUN_TEST(test_initialize_update_arrays);
+
+    // Phase 3: Kernel Energy Tests
+    RUN_TEST(test_calc_device_energy);
+    RUN_TEST(test_calc_device_energy_known_state);
+    RUN_TEST(test_equilibrate);
+    RUN_TEST(test_equilibrate_energy_lowering);
+    RUN_TEST(test_calc_replica_statistics);
+
+    // Phase 4: Resample Tests (stub for now)
+    RUN_TEST(test_resample);
+
+    // Phase 5: Integration Test (stub)
+    RUN_TEST(test_integration_simulation);
+
+    // Summary with color based on failures
+    std::cout << COLOR_CYAN COLOR_BOLD "\n================================================================\n";
+    std::cout << "TEST SUMMARY:\n";
+    std::cout << COLOR_GREEN "PASSING TESTS: " << g_test_passing << COLOR_RESET "\n";
+    if (g_test_failed > 0)
+        std::cout << COLOR_RED "FAILED TESTS:  " << g_test_failed << COLOR_RESET "\n";
+    else
+        std::cout << "FAILED TESTS:  " << g_test_failed << "\n";
+    std::cout << COLOR_CYAN COLOR_BOLD "===========================================================" COLOR_RESET "\n";
+
+    // Cleanup any device memory (if any tests allocated)
+    // Currently no allocations, but placeholder for future.
+
+    return g_test_failed > 0 ? 1 : 0;
 }
