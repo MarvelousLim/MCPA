@@ -199,51 +199,67 @@ __device__ int suggest_spin_swap(int current_spin) {
     return -current_spin;
 }
 
-__global__ void equilibrate_kernel(curandStatePhilox4_32_10_t* curand_states, struct mainMemoryPointers device, struct Params params, int U) { //, enum equlibrateMode equlibrate_mode
+__global__ void equilibrate_kernel(curandStatePhilox4_32_10_t* curand_states, struct mainMemoryPointers device, struct Params params, int U,
+                                      unsigned long long* timing_slf, unsigned long long* timing_rng,
+                                      unsigned long long* timing_energy, unsigned long long* timing_write) {
     /*---------------------------------------------------------------------------------------------
         Main Microcanonical Monte Carlo loop.  Performs update sweeps on each replica in the
         population
     ---------------------------------------------------------------------------------------------*/
-    //long long int kernel_start = clock();
-    //int SLF_spend = 0;
-
     int r = threadIdx.x + blockIdx.x * blockDim.x;
     long long replica_shift = (long long)r * params.N;
     device.replica_statistics[r].flip_count = 0;
 
+    unsigned long long t0, t1, t2, t3, t4;
+
     //for (int k = 0; k < 1; k++)
     for (int k = 0; k < params.N * params.nSteps; k++)
     {
+        // Time 1: Random number generation
+        t0 = clock64();
         int j = curand(&curand_states[r]) % params.N;
+        t1 = clock64();
+        if (timing_rng) timing_rng[r] += (t1 - t0);
 
+        // Time 2: Get current spin
         int current_spin = device.spin[j + replica_shift];
         int suggested_spin = suggest_spin_swap(current_spin);
 
+        // Time 3: SLF - neighbor indices
+        t2 = clock64();
         struct neiborsIndexes n_i = SLF(j, params);
-        struct neiborsValues n = SVLF(device, n_i, replica_shift);
+        t3 = clock64();
+        if (timing_slf) timing_slf[r] += (t3 - t2);
 
+        // Time 4: SVLF + local_energy
+        t4 = clock64();
+        struct neiborsValues n = SVLF(device, n_i, replica_shift);
         int current_local_energy = local_energy(current_spin, n);
         int suggested_local_energy = -current_local_energy;
-        //int suggested_local_energy = local_energy(suggested_spin, n);
+        t0 = clock64();
+        if (timing_energy) timing_energy[r] += (t0 - t4);
 
         int suggested_energy = device.E[r] + suggested_local_energy - current_local_energy;
 
+        // Time 5: Memory writes
+        t2 = clock64();
         if ((!params.heat && (suggested_energy < U)) || (params.heat && (suggested_energy > U))) {
             device.E[r] = suggested_energy;
             device.spin[j + replica_shift] = suggested_spin;
             device.replica_statistics[r].flip_count++;
         }
-    }
+        t3 = clock64();
+        if (timing_write)
+            timing_write[r] += (t3 - t2);
 
-    //int kernel_end = clock();
-    //kernel_timers[r] += kernel_end - kernel_start;
-    //if (r == 0)
-    //    printf("kernel %d: %d\n", r, (kernel_end - kernel_start));
-    //atomicAdd(&kernel_timers[1], (float)SLF_spend);
+    }
 }
 
-DECLSPEC void equilibrate(void* curand_states, struct mainMemoryPointers device, struct Params params, int U) {
-    equilibrate_kernel << < params.blocks, params.threads >> > ((curandStatePhilox4_32_10_t*)curand_states, device, params, U);
+DECLSPEC void equilibrate(void* curand_states, struct mainMemoryPointers device, struct Params params, int U,
+                        unsigned long long* timing_slf, unsigned long long* timing_rng,
+                        unsigned long long* timing_energy, unsigned long long* timing_write) {
+    equilibrate_kernel << < params.blocks, params.threads >> > ((curandStatePhilox4_32_10_t*)curand_states, device, params, U,
+        timing_slf, timing_rng, timing_energy, timing_write);
     CUDA_CHECK(cudaDeviceSynchronize());
     CUDA_CHECK(cudaPeekAtLastError());
     CUDA_CHECK(cudaDeviceSynchronize());

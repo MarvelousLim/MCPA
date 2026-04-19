@@ -100,7 +100,9 @@ DECLSPEC void initialize_update_arrays(struct mainMemoryPointers host, struct Pa
 DECLSPEC void copyHostToDevice(void* dst, void* src, size_t size);
 DECLSPEC void copyDeviceToHost(void* dst, void* src, size_t size);
 DECLSPEC void calc_device_energy(struct mainMemoryPointers device, struct Params params);
-DECLSPEC void equilibrate(void* curand_states, struct mainMemoryPointers device, struct Params params, int U);
+DECLSPEC void equilibrate(void* curand_states, struct mainMemoryPointers device, struct Params params, int U,
+                        unsigned long long* timing_slf = NULL, unsigned long long* timing_rng = NULL,
+                        unsigned long long* timing_energy = NULL, unsigned long long* timing_write = NULL);
 DECLSPEC void calc_replica_statistics(struct mainMemoryPointers device, struct Params params, int U);
 DECLSPEC double prepare_resample_arrays(struct mainMemoryPointers host, struct Params params, int* U);
 DECLSPEC double calc_family_avg_sq_size(struct mainMemoryPointers host, struct Params params, int U);

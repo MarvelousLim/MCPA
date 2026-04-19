@@ -49,7 +49,19 @@ int main(int argc, char* argv[]) {
     params.replicaStatisticsByteSize = (size_t)params.R * sizeof(replicaStatistics);
     params.heat = (bool)atoi(argv[6]);
 
-    //long long int* host_kernel_timers, * device_kernel_timers;
+    // Kernel timing arrays (optional, enabled via argv[7])
+    unsigned long long* timing_slf = NULL;
+    unsigned long long* timing_rng = NULL;
+    unsigned long long* timing_energy = NULL;
+    unsigned long long* timing_write = NULL;
+    bool enable_timing = (argc > 7 && atoi(argv[7]) != 0);
+
+    if (enable_timing) {
+        CUDA_CHECK(cudaMallocManaged(&timing_slf, params.R * sizeof(unsigned long long)));
+        CUDA_CHECK(cudaMallocManaged(&timing_rng, params.R * sizeof(unsigned long long)));
+        CUDA_CHECK(cudaMallocManaged(&timing_energy, params.R * sizeof(unsigned long long)));
+        CUDA_CHECK(cudaMallocManaged(&timing_write, params.R * sizeof(unsigned long long)));
+    }
 
     //host_kernel_timers = (long long int*)malloc(params.R * sizeof(long long int));
     //CUDA_CHECK(cudaMallocManaged((void**)&device_kernel_timers, params.R * sizeof(long long int)));
@@ -117,7 +129,7 @@ int main(int argc, char* argv[]) {
 
         // Equilibrate
         clock_t t0 = clock();
-        equilibrate(curand_states, device, params, U);
+        equilibrate(curand_states, device, params, U, timing_slf, timing_rng, timing_energy, timing_write);
         clock_t t1 = clock();
         equilibrate_ticks += t1 - t0;
 
@@ -223,6 +235,31 @@ int main(int argc, char* argv[]) {
     printf("Copy D->H:        %.2fs (%.1f%%)\n", copy_d2h_time_spend, 100.0 * copy_d2h_time_spend / global_time_spend);
     printf("Copy H->D:        %.2fs (%.1f%%)\n", copy_h2d_time_spend, 100.0 * copy_h2d_time_spend / global_time_spend);
     printf("====================\n");
+
+    // Kernel-level timing breakdown (if enabled)
+    if (enable_timing && timing_slf) {
+        unsigned long long total_slf = 0, total_rng = 0, total_energy = 0, total_write = 0;
+        for (int i = 0; i < params.R; i++) {
+            total_slf += timing_slf[i];
+            total_rng += timing_rng[i];
+            total_energy += timing_energy[i];
+            total_write += timing_write[i];
+        }
+        unsigned long long total_kernel = total_slf + total_rng + total_energy + total_write;
+        if (total_kernel > 0) {
+            printf("\n=== KERNEL TIMING (inside equilibrate) ===\n");
+            double ns_per_cycle = 1.0; // clock64 is in nanoseconds
+            printf("SLF (neighbor indices): %.2f%%\n", 100.0 * (double)total_slf / total_kernel);
+            printf("RNG (curand):           %.2f%%\n", 100.0 * (double)total_rng / total_kernel);
+            printf("Energy (SVLF+local):  %.2f%%\n", 100.0 * (double)total_energy / total_kernel);
+            printf("Write (spin+energy):  %.2f%%\n", 100.0 * (double)total_write / total_kernel);
+            printf("====================\n");
+        }
+        CUDA_CHECK(cudaFree(timing_slf));
+        CUDA_CHECK(cudaFree(timing_rng));
+        CUDA_CHECK(cudaFree(timing_energy));
+        CUDA_CHECK(cudaFree(timing_write));
+    }
 
     return 0;
 }
