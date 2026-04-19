@@ -4,7 +4,7 @@ A computational physics project implementing the Monte-Carlo Population Annealin
 
 ## Authors
 
-PhD work with Lev Shur, Natan Rose, and John Machta.
+PhD work with Lev Shchur, Natan Rose, and John Machta.
 
 ## Overview
 
@@ -157,7 +157,7 @@ For the Blume-Capel model and microcanonical population annealing:
 
 MIT License
 
-Copyright (c) 2024 Lev Shur, Viacheslav Mozolenko, Natan Rose, John Machta
+Copyright (c) 2024 Lev Shchur, Viacheslav Mozolenko, Natan Rose, John Machta
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
