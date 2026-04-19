@@ -90,10 +90,11 @@ Arguments:
 - `threads`: Number of GPU threads per block
 - `nSteps`: Number of Monte Carlo steps per replica per iteration
 - `heat`: 0 for annealing (E decreasing), 1 for heating (E increasing)
+- `enable_timings`: 1 for run time calc to console
 
 Example:
 ```
-main.exe 42 16 1 16 10 0
+main.exe 42 16 1 16 10 0 1
 ```
 Runs on 16x16 lattice with 16 replicas, 10 MC steps, cooling.
 
