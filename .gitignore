@@ -1,0 +1,41 @@
+# CMake and local builds
+/build/
+/build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CTestTestfile.cmake
+Testing/
+compile_commands.json
+*.ninja
+.ninja_*
+
+# Simulation output and checkpoints
+/datasets/
+/checkpoints/
+*_chk.bin
+*_chk.prev.bin
+*_chk.tmp
+*_chk.done
+
+# Runtime and profiler artifacts
+*.log
+core
+core.*
+*.nsys-rep
+*.ncu-rep
+*.qdrep
+*.nvvp
+
+# Language, notebook, and tool caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.cache/
+.ipynb_checkpoints/
+
+# Local editor and OS state
+.idea/
+.vscode/
+.DS_Store
+*~
