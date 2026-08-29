@@ -1,0 +1,11 @@
+/build/
+/build-*/
+/datasets/
+/.ipynb_checkpoints/
+__pycache__/
+*.pyc
+*.log
+*.tmp
+*.bin
+*.prev.bin
+*.done
