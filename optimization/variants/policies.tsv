@@ -1,0 +1,10 @@
+name	status	mechanism	correctness_gate
+baseline	active	current production equilibrate kernel	bitwise reference comparison
+register_state	accepted_gpu_bitwise	retain energy flip count and Philox state in registers	RTX 4060 smoke bitwise PASS; see results/stage1.md
+sync_cleanup	accepted_gpu_bitwise	remove duplicate wrapper synchronization; keep launch check and completion barrier	RTX 4060 smoke bitwise PASS; see results/stage1.md
+heat_specialization	rejected_neutral_gpu	compile separate heating and cooling paths	bitwise PASS both directions; 0.15%/0.14% mixed gain below 2% gate; see results/stage2.md
+local_block_512	accepted_local_configuration	launch accepted kernel with 512 threads per block	RTX 4060 bitwise PASS and about 4% mixed-workload gain both directions; runtime parameter, not cluster default; see results/stage3.md
+grouped_attempts	rejected_neutral_gpu	process four Philox values per explicit ordered loop body	bitwise PASS including partial tail; 0.50% mixed cooling gain and all completed cases below 2% gate; see results/stage4.md
+block_sweep	skipped_physics_order	structured site traversal experiment	not evaluated: changes attempted-site order and violates current physics hard stop
+byte_spins	planned	store spins as signed bytes	bitwise observables and trajectory
+neighbor_table	accepted_gpu_bitwise_opt_in	precompute exact SLF indices once and use only in equilibrate	bitwise PASS all regimes/directions; 2.42% cooling and 2.26% heating mixed gain on RTX 4060; default OFF; see results/stage5.md

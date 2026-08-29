@@ -1,0 +1,49 @@
+# CMake / compiler output
+/build/
+/build-*/
+/cmake-build-*/
+CMakeUserPresets.json
+compile_commands.json
+*.o
+*.obj
+*.a
+*.so
+*.dll
+*.exe
+*.pdb
+
+# Simulation output and restart state
+/datasets/
+/checkpoints/
+/experiments/
+*_chk.bin
+*_chk.prev.bin
+*_chk.prev
+*_chk.tmp
+*_chk.done
+
+# Profiler output (human-readable summaries belong in documentation)
+*.ncu-rep
+*.nsys-rep
+*.qdrep
+*.sqlite
+/optimization/artifacts/
+/optimization/results/*.jsonl
+!/optimization/results/example.jsonl
+
+# IDE / operating-system noise
+.vscode/
+.idea/
+.vs/
+*.user
+*.suo
+*.VC.db
+.DS_Store
+Thumbs.db
+.ipynb_checkpoints/
+
+# Editor and transient files
+*~
+*.swp
+*.tmp
+*.log

@@ -1,0 +1,4 @@
+name	L	R	nSteps	warmups	repeats	purpose
+smoke	36	8192	1	2	7	fast local correctness and timing
+production	36	131072	2	3	10	population-scale throughput
+working-set	162	8192	1	2	7	large per-replica lattice working set
