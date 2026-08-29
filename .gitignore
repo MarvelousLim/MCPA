@@ -1,0 +1,32 @@
+# CMake and native build products
+/build/
+/cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+CTestTestfile.cmake
+Testing/
+*.o
+*.a
+*.so
+*.exe
+*.obj
+*.pdb
+
+# Simulator runtime products
+/datasets/
+*_chk.bin
+*_chk.prev.bin
+*_chk.tmp
+*_chk.done
+
+# Editors, notebooks, caches, and logs
+.ipynb_checkpoints/
+.idea/
+.vscode/
+.vs/
+*.suo
+*.user
+*.log
+*.tmp
+*~
+__pycache__/
