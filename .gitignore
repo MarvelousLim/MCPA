@@ -1,0 +1,12 @@
+# CMake and compiler output
+/build/
+/cmake-build-*/
+
+# Local simulation and checkpoint output
+/datasets/
+/checkpoints/
+
+# Local editor state
+/.vs/
+*.user
+*.suo
